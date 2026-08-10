@@ -92,6 +92,13 @@ and they must stay in step: `lib/prisma.ts` for the running app (it passes `data
 overriding the schema’s `env(DATABASE_URL)`) and `scripts/db-env.mjs` for the Prisma CLI,
 which cannot see application code.
 
+**It is not only `vercel env pull` that overwrites `.env.local`.** `vercel blob create-store`
+does it too, as a side effect of linking the new store — and so do other provisioning
+subcommands. The file it leaves behind holds exactly what the Vercel project holds, which is how
+a local-only `CLERK_SECRET_KEY` gets destroyed by a command that appears to be about file
+storage. Copy `.env.local` somewhere before running any `vercel` command that provisions
+something; `npm run env:pull` is the only path here that preserves local-only keys.
+
 **`vercel env pull .env.local` overwrites that file.** It writes exactly what the Vercel project
 holds, so a local-only `DATABASE_URL` is wiped whenever the project has none. Neon also does not
 publish a variable named `DIRECT_URL` — it publishes `DATABASE_URL` (pooled) and
