@@ -1,0 +1,503 @@
+// Nivasa — curated Bangalore homes.
+//
+// Conventions carried over from eventsforge / intelliforge:
+//   - money in paise (Int), never Float
+//   - EVERY DateTime is @db.Timestamptz(3). Prisma's bare `DateTime` is `timestamp(3)` with no
+//     zone, and comparing a zoneless column against `now()` resolves through the session
+//     TimeZone GUC — on an Asia/Calcutta cluster that reads freshly written rows as already
+//     past. Viewing availability sits inside exactly that kind of comparison, so the rule is
+//     all-or-nothing rather than per-column.
+//   - `prisma migrate deploy` in production, never `db push`
+//   - display timezone is Asia/Kolkata; every stored instant is UTC
+//
+// Single-tenant on purpose. Nivasa is one curation team, not a platform — so there is no
+// Organization table and no orgId on every row. If a second brand is ever onboarded, that is a
+// migration, not a shape the schema should carry speculatively.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AdminRole {
+  OWNER // full control, including publishing and archiving
+  CURATOR // properties, enquiries, owner submissions
+  VIEWER // read-only
+}
+
+enum PropertyStatus {
+  DRAFT // being written up; invisible to the public API
+  PUBLISHED // live on the site
+  ARCHIVED // sold or withdrawn; kept for its enquiry history
+}
+
+enum Amenity {
+  GYM
+  SECURITY
+  LIFT
+  PARKING
+  POWER
+  GARDEN
+  POOL
+  STUDY
+}
+
+enum HoodKind {
+  TRANSIT
+  WORK
+  SCHOOL
+  HEALTH
+  SHOPPING
+  DINING
+  PARK
+}
+
+enum EnquiryKind {
+  SITE_VISIT // meet the owner at the home, at a booked slot
+  OWNER_CALL // the owner rings the enquirer, at a booked slot
+  MESSAGE // free text, no slot
+  GENERAL // "Enquire" in the header — not attached to a property
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  SCHEDULED
+  CLOSED
+  CANCELLED
+}
+
+enum ViewingStatus {
+  BOOKED
+  COMPLETED
+  CANCELLED
+}
+
+enum SubmissionStatus {
+  NEW
+  REVIEWING
+  ACCEPTED
+  DECLINED
+}
+
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum NotificationType {
+  ENQUIRY_RECEIVED
+  VIEWING_BOOKED
+  OWNER_SUBMISSION_RECEIVED
+  NEWSLETTER_WELCOME
+  AGENT_REPLY_PENDING // a drafted reply is waiting for a curator
+}
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum EmailThreadStatus {
+  OPEN // nothing is waiting on a human
+  AWAITING_REVIEW // a drafted reply is sitting in /dashboard/inbox
+  CLOSED
+}
+
+enum AgentDraftStatus {
+  PENDING_REVIEW // the default; a curator has to press send
+  AUTO_SENT // the agent sent it itself, under the autosend whitelist
+  SENT // a curator approved and sent it
+  DISMISSED // a curator threw it away
+  FAILED // approved, but the provider refused it
+}
+
+/// What the visitor's reply is asking for. The whitelist in lib/reply-agent.ts is expressed in
+/// these terms, so adding a value is an explicit decision about what the agent may answer alone.
+enum ReplyIntent {
+  VIEWING_RESCHEDULE
+  VIEWING_CANCEL
+  VIEWING_CONFIRM
+  LOGISTICS // "what's the address", "where do I park"
+  PROPERTY_QUESTION // anything about the home itself
+  PRICE_NEGOTIATION
+  DOCUMENTS
+  OTHER
+  UNCLEAR
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The source of truth for role, deliberately not a Clerk session claim: claims are cached in
+/// the token and stay stale for up to a minute after a demotion.
+model Admin {
+  id          String    @id @default(cuid())
+  clerkUserId String    @unique
+  email       String
+  name        String?
+  role        AdminRole @default(CURATOR)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  publishedProperties Property[]   @relation("PropertyPublisher")
+  handledEnquiries    Enquiry[]    @relation("EnquiryHandler")
+  reviewedDrafts      AgentDraft[] @relation("DraftReviewer")
+
+  @@index([role])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listings
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Property {
+  id     String         @id @default(cuid())
+  slug   String         @unique
+  status PropertyStatus @default(DRAFT)
+
+  name        String
+  location    String // "Whitefield, Bangalore" — as displayed
+  locality    String // "Whitefield" — the filterable half
+  tagline     String
+  story       String
+  /// Long-form paragraphs, rendered in order.
+  description String[]
+
+  bhk       String // "3 BHK", as displayed
+  bhkNum    Int // the filterable half
+  areaLabel String // "Carpet Area" / "Plot Area"
+  area      String // "1,650 sqft", as displayed
+  areaSqft  Int
+
+  /// Paise, and deliberately BigInt rather than Int.
+  ///
+  /// Prisma's `Int` is INT4, which caps at 2,147,483,647 — ₹2.15 crore. That is *inside* the
+  /// range of an ordinary Bangalore listing, so `Int` here is not a tight fit, it is a column
+  /// that rejects the second seeded home. INT8 costs four extra bytes and removes the ceiling.
+  /// Reading it back as a JS `number` stays exact: 2^53 paise is ₹90 lakh crore.
+  pricePaise BigInt
+
+  latitude  Float
+  longitude Float
+
+  amenities Amenity[]
+
+  /// Free-text intro to the neighbourhood, above the places list.
+  hoodBlurb String
+
+  heroImageUrl  String
+  videoUrl      String?
+  /// May be a data: URI while a listing still carries an illustrative plan rather than the
+  /// architect's drawing.
+  floorplanUrl  String?
+  floorplanNote String?
+
+  /// Site-visit slots the owner will honour in a single week. Availability is
+  /// this number minus the viewings actually booked for the week — see lib/viewings.ts.
+  weeklyViewingSlots Int @default(3)
+
+  publishedAt DateTime? @db.Timestamptz(3)
+  publishedBy String?
+  publisher   Admin?    @relation("PropertyPublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  images    PropertyImage[]
+  hood      HoodPlace[]
+  enquiries Enquiry[]
+  viewings  Viewing[]
+
+  @@index([status, publishedAt])
+  @@index([bhkNum])
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  url       String
+  alt       String
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([propertyId, sortOrder])
+}
+
+model HoodPlace {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  kind      HoodKind
+  name      String
+  /// "10 min walk" — human copy, not a computed distance. We do not fabricate precision.
+  distance  String
+  sortOrder Int      @default(0)
+
+  @@index([propertyId, sortOrder])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Demand
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Every enquiry the public site produces. `propertyId` is null only for GENERAL.
+model Enquiry {
+  id        String @id @default(cuid())
+  /// Short human-quotable handle, e.g. "NIV-7Q4KX2". Unique so a retried submit cannot
+  /// silently create a second row under the same reference.
+  reference String @unique
+
+  kind   EnquiryKind
+  status EnquiryStatus @default(NEW)
+
+  propertyId   String?
+  property     Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  /// Snapshot of what the enquirer saw. A property can be renamed or archived; the enquiry
+  /// must still read correctly a year later.
+  propertyName String?
+
+  name    String
+  /// E.164, normalized on the way in (+91XXXXXXXXXX).
+  phone   String
+  email   String?
+  message String?
+
+  handledBy String?
+  handler   Admin?  @relation("EnquiryHandler", fields: [handledBy], references: [id], onDelete: SetNull)
+  notes     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  viewing      Viewing?
+  emailThreads EmailThread[]
+
+  @@index([status, createdAt])
+  @@index([propertyId, createdAt])
+  @@index([phone])
+}
+
+/// A booked slot. Separate from Enquiry because the uniqueness that prevents a double booking
+/// is `(propertyId, scheduledFor)` — a constraint an enquiry row cannot carry, since MESSAGE
+/// and GENERAL enquiries have no slot at all and would collide on null.
+///
+/// The unique index IS the concurrency control: two people picking the same slot race to
+/// INSERT, Postgres rejects the loser with P2002, and the route turns that into a 409 telling
+/// them to pick another time. No transaction, no lock, no read-then-write.
+model Viewing {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  enquiryId String  @unique
+  enquiry   Enquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  /// The instant the visit starts, stored UTC. The picker offers slots in Asia/Kolkata.
+  scheduledFor DateTime      @db.Timestamptz(3)
+  status       ViewingStatus @default(BOOKED)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  /// A cancelled slot still occupies the row, so cancelling does not free the time until an
+  /// admin deletes it. That is deliberate: an owner who cancelled once should not have the
+  /// same hour resold from under them by the next visitor to load the page.
+  @@unique([propertyId, scheduledFor])
+  @@index([propertyId, scheduledFor, status])
+  @@index([scheduledFor])
+}
+
+/// "List your home" intake. Media is described, never uploaded — the form records what the
+/// owner has so a curator can ask for it, which is honest about what this MVP stores.
+model OwnerSubmission {
+  id        String           @id @default(cuid())
+  reference String           @unique
+  status    SubmissionStatus @default(NEW)
+
+  name     String
+  phone    String
+  email    String?
+  locality String
+
+  propertyType  String?
+  config        String?
+  areaSqft      Int?
+  /// Free text, e.g. "1.4 Cr" — owners quote in crore, not paise, and coercing it here would
+  /// invent a precision they did not give.
+  expectedPrice String?
+  timeline      String?
+  message       String?
+
+  mediaCount Int     @default(0)
+  notes      String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+}
+
+model Subscriber {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  unsubscribedAt DateTime? @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+}
+
+/// Written PENDING before a send and finalised after, so a crash leaves a visible "we may have
+/// sent this" rather than a message that reached a real person with no record of it.
+model NotificationLog {
+  id      String              @id @default(cuid())
+  channel NotificationChannel @default(EMAIL)
+  type    NotificationType
+  status  NotificationStatus  @default(PENDING)
+
+  recipient String
+  subject   String
+  body      String
+  error     String?
+
+  /// Whatever the notification is about — an enquiry id, a submission id.
+  subjectId String?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  sentAt    DateTime? @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([subjectId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversations
+//
+// Deliberately separate from NotificationLog. That table is the outbound audit — what the app
+// decided to send and what became of it. These three are the two-way conversation with a
+// visitor: what they wrote back, and what the agent proposed to say. Conflating them would
+// make "did we tell the team about this lead" and "what did this person actually ask" the
+// same query, and they are answered by different people for different reasons.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One AgentMail thread. Visitors have no accounts, so `participantEmail` plus the enquiry it
+/// was matched to is the entire identity we have for the other side.
+model EmailThread {
+  id               String @id @default(cuid())
+  /// AgentMail's thread id. Unique so a webhook retry cannot fork the conversation.
+  providerThreadId String @unique
+  inboxId          String
+
+  participantEmail String
+  subject          String?
+  status           EmailThreadStatus @default(OPEN)
+
+  /// Matched by email at ingest time, and nullable on purpose: a stranger can write to the
+  /// inbox, and that thread still has to be readable. SetNull for the same reason
+  /// `Enquiry.propertyId` is — the conversation outlives the record it was attached to.
+  enquiryId String?
+  enquiry   Enquiry? @relation(fields: [enquiryId], references: [id], onDelete: SetNull)
+
+  /// Drives the inbox ordering, and is what the agent's per-thread send budget is counted over.
+  lastMessageAt DateTime @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  messages EmailMessage[]
+  drafts   AgentDraft[]
+
+  @@index([status, lastMessageAt])
+  @@index([participantEmail])
+  @@index([enquiryId])
+}
+
+/// Every message in a thread, both directions.
+///
+/// `providerMessageId` is unique, and that unique index IS the webhook idempotency guard —
+/// the same pattern as `Viewing.@@unique([propertyId, scheduledFor])`. Svix retries on any
+/// non-2xx and can deliver the same event twice on a slow response, so "have I seen this
+/// already" is answered by a failed INSERT rather than by a read that races the retry.
+model EmailMessage {
+  id                String      @id @default(cuid())
+  providerMessageId String      @unique
+  threadId          String
+  thread            EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  direction   EmailDirection
+  fromAddress String
+  toAddresses String[]
+  subject     String?
+  /// `extracted_text` where AgentMail gives it — the new content with quoted history stripped —
+  /// falling back to the full body. What the agent reads must not include its own last reply.
+  text        String
+
+  receivedAt DateTime @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  draftedFrom AgentDraft? @relation("DraftSource")
+  sentAs      AgentDraft? @relation("DraftSent")
+
+  @@index([threadId, receivedAt])
+}
+
+/// A reply the agent composed. Never sent implicitly: `PENDING_REVIEW` is the default, and only
+/// the intent whitelist in lib/reply-agent.ts — behind NIVASA_AGENT_AUTOSEND — can produce
+/// `AUTO_SENT`. Everything else waits for a curator at /dashboard/inbox.
+model AgentDraft {
+  id       String      @id @default(cuid())
+  threadId String
+  thread   EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  /// The inbound message this answers. Unique, so one drafting attempt per inbound message —
+  /// which is also what makes the webhook self-healing: a retry that finds the message stored
+  /// but no draft beside it knows the previous attempt died between the two writes.
+  inReplyToId String       @unique
+  inReplyTo   EmailMessage @relation("DraftSource", fields: [inReplyToId], references: [id], onDelete: Cascade)
+
+  intent     ReplyIntent
+  /// 0–100, the model's own reading. Below the floor in lib/reply-agent.ts nothing auto-sends.
+  confidence Int
+  status     AgentDraftStatus @default(PENDING_REVIEW)
+
+  subject   String
+  body      String
+  /// One line on why the agent answered this way, shown beside the draft. A curator approving
+  /// a message that goes to a real person should not have to guess what it was reasoning from.
+  rationale String
+
+  /// Set once the draft actually goes out.
+  sentMessageId String?       @unique
+  sentMessage   EmailMessage? @relation("DraftSent", fields: [sentMessageId], references: [id], onDelete: SetNull)
+
+  reviewedBy String?
+  reviewer   Admin?  @relation("DraftReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  error      String?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  sentAt    DateTime? @db.Timestamptz(3)
+
+  @@index([status, createdAt])
+  @@index([threadId])
+}

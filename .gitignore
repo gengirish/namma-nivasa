@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
 
 # next.js
 /.next/
@@ -32,6 +36,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …except the template. `.env*` swallowed it, so a clone got no answer to "what do I need to
+# set", which is the one file that is supposed to tell you. It holds names and placeholders only.
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +46,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*.local
+
+.env*.local
