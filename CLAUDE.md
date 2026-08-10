@@ -26,6 +26,8 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 | Public API | `app/api/{properties,enquiries,owner-submissions,subscribers}` |
 | Admin API | `app/api/admin/{bootstrap,properties,enquiries,submissions,drafts}` |
 | Visitor UI | `app/page.tsx` → `components/nivasa-*`, `components/{home,property,map,list-property}-view.tsx` |
+| Client-side extras | `lib/brochure.ts` (printable brochure + WhatsApp share), `lib/ics.ts`, `lib/voice.ts` → `components/voice-concierge.tsx`, `lib/persisted-ids.ts` (shortlist/recent stores), `lib/graphics.ts` |
+| Shared spine | `lib/prisma.ts`, `lib/api-response.ts`, `lib/validations.ts`, `lib/rate-limit.ts`, `lib/site-url.ts`, `lib/content.ts`, `lib/types.ts` |
 | Dashboard | `app/dashboard/*`, `components/dashboard/*` |
 | PWA | `public/manifest.webmanifest`, `public/sw.js`, `scripts/generate-icons.mjs` |
 | E2E tests | `playwright.config.ts`, `e2e/tests/*.spec.ts`, `e2e/support/*` |
@@ -52,6 +54,7 @@ npm run icons            # regenerate public/icons/*.png
 
 npm run test:e2e         # Playwright — starts its own dev server on :3187
 npm run test:e2e:ui      # the same suite in Playwright's watch UI
+npm run test:e2e:headed  # headed browsers, same dev server
 npm run test:e2e:prod    # against a production build rather than `next dev`
 npm run test:e2e:report  # open the last HTML report
 
@@ -66,6 +69,17 @@ npm run db:setup         # env:pull + migrate deploy + seed, for a fresh environ
 
 Env lives in `.env.local`, not `.env` — Next reads it, and the `db:*` scripts read it explicitly
 through `scripts/db-env.mjs` because the Prisma CLI does not. See `.env.example`.
+
+**Migrations run inside the Vercel build**, via `buildCommand` in `vercel.json`:
+`npm run db:deploy && npm run build`. That is the only place they *can* run unattended — the
+Neon connection string is non-retrievable (see below), so a deploy is the one context that holds
+a working one. `scripts/db-env.mjs` needs no `.env.local` to do it: the file is optional, real
+environment wins, and `pick()` resolves both the `namma_nivasa_` prefix and the unpooled URL that
+`directUrl` requires. A build that cannot reach the database fails before `next build`, which is
+the intended order — shipping an app against an unmigrated schema is how production came up
+answering 500 to every route once already. Seeding is deliberately *not* in this command:
+`prisma/seed.ts` upserts by slug, so running it on each deploy would quietly rewrite listings a
+curator had edited.
 
 **Neon’s connection string cannot be pulled.** Vercel marks Marketplace-managed variables
 non-retrievable, so `vercel env pull` writes their names with **empty values** — 28 of 37 on
