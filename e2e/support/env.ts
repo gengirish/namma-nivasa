@@ -75,3 +75,28 @@ export function isAuthConfiguredInEnv(): boolean {
   loadLocalEnv();
   return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
 }
+
+/**
+ * The Svix secret the server under test verifies inbound webhooks against.
+ *
+ * Pinned by the suite rather than read from `.env.local`, and pushed into the server's
+ * environment by `playwright.config.ts`, so the signed-request specs behave identically on a
+ * machine that has an AgentMail account and one that does not. It is a throwaway constant: the
+ * only thing it signs is a fabricated payload posted at a dev server on :3187.
+ */
+export const E2E_WEBHOOK_SECRET = "whsec_ZTJlLXRlc3Qtc2VjcmV0LW5vdC1hLXJlYWwtb25lLg==";
+
+/**
+ * What the server under test must NOT have.
+ *
+ * The webhook spec drives the real handler, and the real handler's next step is to call a model
+ * and then send email to whatever address the payload names. Blanking these two makes that
+ * impossible rather than unlikely — a suite that could email a stranger because someone's
+ * `.env.local` was fully populated is not a suite anyone should run twice.
+ */
+export const E2E_SERVER_ENV: Record<string, string> = {
+  AGENTMAIL_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
+  AGENTMAIL_INBOX_ID: "",
+  ANTHROPIC_API_KEY: "",
+  NIVASA_AGENT_AUTOSEND: "",
+};

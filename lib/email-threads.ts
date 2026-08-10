@@ -243,8 +243,14 @@ export async function sendDraft(input: {
 
   const now = new Date();
   await prisma.$transaction(async (tx) => {
-    const outbound = await tx.emailMessage.create({
-      data: {
+    // Upsert, not create. AgentMail honours the idempotency key by replaying the original
+    // response, so a retried approval whose first attempt sent successfully but died before
+    // writing these rows comes back with a `messageId` we already hold. A `create` there would
+    // hit P2002 inside the transaction and strand the draft in SENDING — the one state a
+    // curator cannot act on — for a send that actually succeeded.
+    const outbound = await tx.emailMessage.upsert({
+      where: { providerMessageId: sent.messageId },
+      create: {
         providerMessageId: sent.messageId,
         threadId: draft.threadId,
         direction: "OUTBOUND",
@@ -254,6 +260,7 @@ export async function sendDraft(input: {
         text: body,
         receivedAt: now,
       },
+      update: { subject, text: body },
       select: { id: true },
     });
 

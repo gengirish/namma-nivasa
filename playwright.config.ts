@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
-import { loadLocalEnv } from "./e2e/support/env";
+import { E2E_SERVER_ENV, loadLocalEnv } from "./e2e/support/env";
 
 /**
  * End-to-end tests: a real Next server against a real Postgres.
@@ -163,6 +163,10 @@ export default defineConfig({
           ? `npm run build && npx next start --port ${PORT}`
           : `npx next dev --port ${PORT}`,
         url: BASE_URL,
+        // A known webhook secret so the signed-request specs are deterministic, and blanked
+        // AgentMail/Anthropic credentials so no run can reach a model or a real mailbox. See
+        // `E2E_SERVER_ENV`.
+        env: E2E_SERVER_ENV,
         // Never recycle a server someone else started: it may hold a different DATABASE_URL.
         reuseExistingServer: false,
         timeout: PROD ? 300_000 : 180_000,

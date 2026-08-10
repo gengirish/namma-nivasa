@@ -121,6 +121,7 @@ enum EmailThreadStatus {
 
 enum AgentDraftStatus {
   PENDING_REVIEW // the default; a curator has to press send
+  SENDING // claimed by a curator, in flight — see app/api/admin/drafts/[id]
   AUTO_SENT // the agent sent it itself, under the autosend whitelist
   SENT // a curator approved and sent it
   DISMISSED // a curator threw it away

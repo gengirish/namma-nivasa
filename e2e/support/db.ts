@@ -239,6 +239,11 @@ export function markerFor(token: string): string {
  */
 export async function purgeMarker(marker: string): Promise<void> {
   const prisma = db();
+  // Threads first: `EmailMessage` and `AgentDraft` both cascade from `EmailThread`, and an
+  // enquiry deleted before its thread leaves the thread behind with a null `enquiryId`.
+  await prisma.emailThread.deleteMany({
+    where: { participantEmail: { contains: marker.toLowerCase() } },
+  });
   await prisma.enquiry.deleteMany({ where: { name: { contains: marker } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: marker } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: marker.toLowerCase() } } });
@@ -249,6 +254,9 @@ export async function purgeMarker(marker: string): Promise<void> {
 /** The whole suite's leftovers, for global teardown and for recovering from a killed run. */
 export async function purgeAllE2EData(): Promise<void> {
   const prisma = db();
+  await prisma.emailThread.deleteMany({
+    where: { participantEmail: { contains: E2E_MARKER.toLowerCase() } },
+  });
   await prisma.enquiry.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: E2E_MARKER.toLowerCase() } } });

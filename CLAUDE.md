@@ -21,9 +21,10 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 | Catalogue reads | `lib/properties.ts`, `lib/dto.ts` |
 | Catalogue writes | `lib/admin-properties.ts` |
 | Owner intake, newsletter | `lib/owner-submissions.ts` |
-| Outbound | `lib/notifications.ts` (no provider wired — see below) |
+| Outbound | `lib/notifications.ts` → `lib/agentmail.ts` |
+| Inbound & the reply agent | `lib/email-threads.ts`, `lib/reply-agent.ts`, `app/api/webhooks/agentmail/` |
 | Public API | `app/api/{properties,enquiries,owner-submissions,subscribers}` |
-| Admin API | `app/api/admin/{bootstrap,properties,enquiries,submissions}` |
+| Admin API | `app/api/admin/{bootstrap,properties,enquiries,submissions,drafts}` |
 | Visitor UI | `app/page.tsx` → `components/nivasa-*`, `components/{home,property,map,list-property}-view.tsx` |
 | Dashboard | `app/dashboard/*`, `components/dashboard/*` |
 | PWA | `public/manifest.webmanifest`, `public/sw.js`, `scripts/generate-icons.mjs` |
@@ -31,9 +32,8 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 
 **Not built — do not assume these exist:**
 
-- **No email or SMS provider.** `deliverEmail()` in `lib/notifications.ts` always returns
-  `NOT_CONFIGURED`, so every message lands `SKIPPED` and is readable at `/dashboard/outbox`.
-  Wiring a messaging integration replaces that one function and nothing else.
+- **No SMS provider.** Email goes through AgentMail (see "Email" below); nothing sends SMS,
+  despite every enquiry carrying a normalized phone number.
 - **No image upload.** `Property.heroImageUrl` / `PropertyImage.url` are URLs a curator supplies.
   The owner-intake form records *how many* files an owner has, never the bytes.
 - **No listing editor UI.** `/dashboard/properties` can publish, unpublish and archive; creating
@@ -190,7 +190,53 @@ reference (`NIV-XXXXXX`) and a phone number. Do not add visitor auth without rev
 All outbound communication goes through `notify()` in `lib/notifications.ts`. It **never throws** —
 its callers are enquiry paths where an exception costs a lead somebody actually typed in. The log
 row is written `PENDING` *before* any send and finalised after, so a crash leaves a visible "we
-may have sent this" rather than a message that reached a real person with no record of it.
+may have sent this" rather than a message that reached a real person with no record of it. That
+log id is also the AgentMail idempotency key, which is what makes a retried send reach a person
+once.
+
+### Email — AgentMail, and what the agent may do alone
+
+`lib/agentmail.ts` is the only file that imports the SDK; everything above it works in terms of
+its `SendResult` union. **With `AGENTMAIL_API_KEY` or `AGENTMAIL_INBOX_ID` unset the app behaves
+exactly as it did before a provider existed** — every notification lands `SKIPPED` with the
+reason recorded and `/dashboard/outbox` is a readable outbox. That is the supported no-credentials
+state, not a broken one.
+
+Inbound mail arrives at `POST /api/webhooks/agentmail`. It is **the only route that is public and
+privileged** — no session, and none possible. Three things there are load-bearing:
+
+- **The raw body is verified, not the parsed object.** `req.text()` before anything else; Svix
+  signs bytes, and re-serialising JSON changes them.
+- **No `AGENTMAIL_WEBHOOK_SECRET` means 503.** There is no branch that processes an unverified
+  body. With autosend on, that branch would let anyone reach a visitor's inbox.
+- **It answers 200 to almost everything.** A non-2xx asks Svix to redeliver. That is right for
+  "I cannot verify you" and wrong for "stored, but the model timed out" — the second would
+  re-run a failed model call forever against a message already on disk.
+
+**Idempotency is `EmailMessage.providerMessageId @unique`, not a read** — same reasoning as the
+double-booking index. And `AgentDraft.inReplyToId @unique` is what makes a retry self-healing: a
+delivery that died between storing the message and writing the draft leaves a message with no
+draft beside it, which is precisely the state the retry detects and finishes.
+
+**The model composes; it never decides.** `lib/reply-agent.ts` hands Claude a facts block built
+from our own rows and asks it to answer using only those. What happens to the answer is settled
+in ordinary code by `autoSendRefusal()`. Autonomous sending needs *all* of: `NIVASA_AGENT_AUTOSEND=1`,
+an intent on a three-entry whitelist, confidence ≥ 80, the model asserting it answered entirely
+from the facts, and the thread's budget of `AUTO_SEND_BUDGET_PER_THREAD` unspent. Anything else
+waits at `/dashboard/inbox`. A model classifying its own message as safe is not a safety control,
+so nothing lets it choose.
+
+**Rescheduling and cancelling are deliberately off the whitelist.** A moved slot means an owner
+has already been told something that is no longer true, and no email should imply otherwise.
+
+**Mail loops are the failure mode to fear.** `unanswerableReason()` in `lib/email-threads.ts`
+refuses to answer our own inbox, bounce/no-reply local parts, and anything AgentMail labelled
+spam or unauthenticated. Everything it refuses is still *recorded* and still visible — it just
+does not get answered.
+
+`/dashboard/inbox` is the conversation; `/dashboard/outbox` is the outbound audit. They are
+separate tables on purpose: "did we tell the team about this lead" and "what did this person
+actually ask" are answered by different people for different reasons.
 
 ### Data flow into the visitor UI
 
@@ -238,6 +284,12 @@ Six things are load-bearing and non-obvious:
 - **Every row a test writes carries a `PWE2E-<testId>` marker** and is deleted afterwards, because
   a booked slot comes out of a real weekly quota. `Viewing` cascades from `Enquiry`, so deleting
   the enquiry gives the hour back. Global teardown sweeps what a crashed run left behind.
+- **The server under test runs with AgentMail and Anthropic credentials blanked** and a pinned
+  webhook secret — `E2E_SERVER_ENV` in `e2e/support/env.ts`, injected via `webServer.env`.
+  `inbound-email.spec.ts` drives the real handler, and the real handler's next step is to call a
+  model and then email whatever address the payload names. Blanking makes that impossible rather
+  than unlikely, and pinning the secret makes the signed cases behave the same on a machine with
+  an AgentMail account and one without.
 - **Dates and slots are computed through `Intl`, never imported from `lib/slots.ts`.** That file
   hardcodes `IST_OFFSET_MINUTES = 330` and the booking flow rests on it; a test reusing the same
   constant would agree with a wrong one. `e2e/support/ist.ts` resolves Asia/Kolkata against tzdata

@@ -68,6 +68,9 @@ async function warmRoutes(baseURL: string, slug: string): Promise<void> {
     { path: "/api/enquiries", method: "POST", expectJson: true },
     { path: "/api/subscribers", method: "POST", expectJson: true },
     { path: "/api/owner-submissions", method: "POST", expectJson: true },
+    // Unsigned, so it is refused before anything is parsed or written — which is exactly the
+    // "did the handler compile" signal the others give, at no cost.
+    { path: "/api/webhooks/agentmail", method: "POST", expectJson: true },
   ];
 
   const deadline = Date.now() + 120_000;

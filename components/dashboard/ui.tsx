@@ -41,7 +41,13 @@ const TONES: Record<string, { bg: string; fg: string }> = {
   DRAFT: { bg: "#FEF3C7", fg: "#92400E" },
   ARCHIVED: { bg: "#F3ECE1", fg: "#57534E" },
   SENT: { bg: "#DCFCE7", fg: "#166534" },
+  AUTO_SENT: { bg: "#DCFCE7", fg: "#166534" },
   PENDING: { bg: "#FEF3C7", fg: "#92400E" },
+  PENDING_REVIEW: { bg: "#FEF3C7", fg: "#92400E" },
+  AWAITING_REVIEW: { bg: "#FEF3C7", fg: "#92400E" },
+  SENDING: { bg: "#E0E7FF", fg: "#3730A3" },
+  OPEN: { bg: "#E0E7FF", fg: "#3730A3" },
+  DISMISSED: { bg: "#F3ECE1", fg: "#57534E" },
   SKIPPED: { bg: "#F3ECE1", fg: "#57534E" },
   FAILED: { bg: "#FEE2E2", fg: "#991B1B" },
 };

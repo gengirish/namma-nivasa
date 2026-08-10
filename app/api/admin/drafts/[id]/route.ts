@@ -58,10 +58,12 @@ export const PATCH = withApiErrors(
     }
 
     // Claim it before sending. `updateMany` with the status in the WHERE is the concurrency
-    // control: exactly one caller changes a row out of PENDING_REVIEW, and the other gets 0.
+    // control: exactly one caller moves the row out of an actionable state, the other updates
+    // nothing and gets a 409. SENDING exists precisely so the claimed row is not itself
+    // claimable — parking it in FAILED for the duration would leave the same race open.
     const claimed = await prisma.agentDraft.updateMany({
       where: { id, status: { in: [...ACTIONABLE] } },
-      data: { status: "FAILED", error: "Sending…", reviewedBy: session.adminId },
+      data: { status: "SENDING", error: null, reviewedBy: session.adminId },
     });
     if (claimed.count === 0) return apiError("That draft has already been dealt with", 409);
 
