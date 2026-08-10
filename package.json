@@ -20,7 +20,8 @@
     "db:studio": "node scripts/db-env.mjs prisma studio",
     "db:seed": "node scripts/db-env.mjs tsx prisma/seed.ts",
     "env:pull": "node scripts/pull-env.mjs",
-    "db:setup": "node scripts/pull-env.mjs && node scripts/db-env.mjs prisma migrate deploy && node scripts/db-env.mjs tsx prisma/seed.ts"
+    "db:setup": "node scripts/pull-env.mjs && node scripts/db-env.mjs prisma migrate deploy && node scripts/db-env.mjs tsx prisma/seed.ts",
+    "listing:create": "node scripts/db-env.mjs tsx scripts/create-listing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
