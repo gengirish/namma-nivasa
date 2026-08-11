@@ -31,6 +31,7 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 | Dashboard | `app/dashboard/*`, `components/dashboard/*` |
 | PWA | `public/manifest.webmanifest`, `public/sw.js`, `scripts/generate-icons.mjs` |
 | E2E tests | `playwright.config.ts`, `e2e/tests/*.spec.ts`, `e2e/support/*` |
+| Deployed smoke | `playwright.deployed.config.ts`, `e2e/smoke/*.spec.ts` — read-only, no database |
 
 **Not built — do not assume these exist:**
 
@@ -57,6 +58,7 @@ npm run test:e2e:ui      # the same suite in Playwright's watch UI
 npm run test:e2e:headed  # headed browsers, same dev server
 npm run test:e2e:prod    # against a production build rather than `next dev`
 npm run test:e2e:report  # open the last HTML report
+npm run test:e2e:deployed # read-only smoke against a deployed server (no database)
 
 npm run db:migrate       # prisma migrate dev    (all db:* go through scripts/db-env.mjs)
 npm run db:deploy        # prisma migrate deploy — production, never `db push`
@@ -318,6 +320,29 @@ Six things are load-bearing and non-obvious:
 
 `e2e/tests/booking.spec.ts` is the one to read first — it is where the double-booking index, the
 weekly cap, and the target-week rule are actually pinned down.
+
+### Testing a deployed server
+
+**The main suite cannot be pointed at a deployment, and `PW_BASE_URL` is not the missing piece.**
+Seven of the eleven specs talk to Postgres directly, so `global-setup.ts` needs `DATABASE_URL` to
+be *the same database the server under test is using*. Neon's string is non-retrievable through
+`vercel env pull`, so that pairing cannot be made from a developer's machine — and if it could,
+the write specs would create real enquiries and spend the real weekly viewing quota on a real
+listing. `webServer.env` is also skipped when `PW_BASE_URL` is set, so `E2E_SERVER_ENV` stops
+applying and `inbound-email.spec.ts` signs against a secret the deployment does not have.
+
+`npm run test:e2e:deployed` is the answer instead: `playwright.deployed.config.ts` +
+`e2e/smoke/*.spec.ts`, **no `globalSetup`, no database connection at all**, and no `webServer` —
+so it cannot write to production and cannot silently fall back to a server it built itself. It
+covers the catalogue against its own API, live availability, the admin boundary, the webhook's
+refusal and the PWA assets. It does *not* cover booking, the double-booking index, the weekly cap
+or the reply agent; those need a database and stay the main suite's job.
+
+One trap it is already built against: **Vercel's deployment-protection wall answers 401 with a
+JSON body**, so a status-code assertion alone passes against a login page that never reached the
+app. The webhook check asserts our own `{success:false,error}` envelope and the HTML check asserts
+the real `<h1>` for that reason. Pointing the suite at a protected preview URL fails all nine
+tests rather than passing a few — which is the behaviour to preserve if you add to it.
 
 ## Conventions
 

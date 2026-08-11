@@ -75,7 +75,16 @@ npm run test:e2e         # Playwright; starts its own dev server on :3187
 npm run test:e2e:ui      # the same suite, in the watch UI
 npm run test:e2e:prod    # against a production build rather than `next dev`
 npm run test:e2e:report  # open the last HTML report
+
+npm run test:e2e:deployed                                  # read-only, against production
+PW_DEPLOY_URL=https://<preview>.vercel.app npm run test:e2e:deployed
 ```
+
+`test:e2e:deployed` is a separate config with **no database connection and no `webServer`**, so it
+cannot write to the deployment it is checking. The main suite cannot be aimed at a deployment —
+most of its specs read and write Postgres directly, and Neon's connection string is not
+retrievable — so the two are complementary rather than alternatives. See "Testing a deployed
+server" in `CLAUDE.md`.
 
 **Stop `npm run dev` before running them** — Next 16 allows one dev server per directory, and the
 config refuses to start rather than let a second one serve half the routes as 404s.
