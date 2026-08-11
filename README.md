@@ -131,8 +131,11 @@ Business logic lives in `lib/` so it is callable from a route, a script, or a cr
 
 ## Deployment
 
-The project is linked to `girish-hiremaths-projects/namma-nivasa`. **Neon Postgres and Clerk are
-both provisioned** through the Vercel Marketplace.
+The project is linked to `girish-hiremaths-projects/namma-nivasa`. **Neon Postgres and Vercel Blob
+are provisioned; Clerk is not.** The deployed project holds the `namma_nivasa_*` Neon variables
+and `BLOB_READ_WRITE_TOKEN`, and nothing else — no Clerk keys, no `NIVASA_TEAM_EMAIL`, no
+`AGENTMAIL_*`, no `NEXT_PUBLIC_APP_URL`. Check with `vercel env ls production` before believing
+`.env.local`, which holds local-only values the project has never seen.
 
 **Migrations run in the build**, not by hand: `vercel.json` sets `buildCommand` to
 `npm run db:deploy && npm run build`, so a build that cannot reach the database fails before
@@ -154,11 +157,24 @@ Use `npm run env:pull` rather than `vercel env pull` directly: the raw command r
 restores those, and deliberately does not restore `DATABASE_URL` — a stale local one pointing at a
 container while the app talks to Neon is the worse failure.
 
-First deploy: visit `/dashboard` and click **Make me the owner**. It only works while the team
-table is empty.
+**The dashboard is unreachable in production until Clerk is added.** `/dashboard` renders "The
+team area is not configured" because `isAuthConfigured()` needs both keys and the project has
+neither. Note that one of them is `NEXT_PUBLIC_`, so it is inlined at build time — saving the
+variables is not enough on its own, the deployment has to be rebuilt afterwards. Once it is:
+visit `/dashboard` and click **Make me the owner**, which only works while the team table is
+empty.
+
+Nothing above blocks the visitor site, which needs no Clerk and is serving fine.
 
 ## Known gaps before launch
 
+- **Clerk is not provisioned on Vercel**, so the deployed dashboard is unreachable. See
+  "Deployment" — the `NEXT_PUBLIC_` key means a rebuild, not just a save.
+- **`NEXT_PUBLIC_APP_URL` is unset in production**, so `siteUrl()` falls back to
+  `http://localhost:3000` and `unusableBaseUrl()` refuses to send anything carrying a link. Set
+  it to the real origin before turning email on, or outbound stays blocked for a second reason
+  after the AgentMail keys are in.
+- **`NIVASA_TEAM_EMAIL` is unset in production**, so enquiry notifications have no destination.
 - **Email is wired but not fully configured.** `AGENTMAIL_INBOX_ID` and
   `AGENTMAIL_WEBHOOK_SECRET` are still unset, so nothing sends and the webhook answers 503 —
   the supported no-credentials state, not a broken one. Create the inbox
