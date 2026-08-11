@@ -226,6 +226,8 @@ export const propertyCreateSchema = z.object({
   floorplanUrl: z.union([z.url(), z.literal("")]).optional().nullable(),
   floorplanNote: optionalText(300),
   weeklyViewingSlots: z.coerce.number().int().min(0).max(50).default(3),
+  /** CC'd on enquiries about this home. Empty string clears it, matching videoUrl/floorplanUrl. */
+  ownerEmail: z.union([emailSchema, z.literal("")]).optional().nullable(),
 });
 
 export const propertyUpdateSchema = propertyCreateSchema.partial().extend({

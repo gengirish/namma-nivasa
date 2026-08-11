@@ -41,6 +41,12 @@ export type SendResult =
 
 export interface OutboundEmail {
   to: string;
+  /**
+   * Copied recipients. CC rather than BCC on purpose: these messages go to the team and to the
+   * owner of the home being asked about, and both sides being able to see who else received it
+   * is what lets one of them reply-all instead of answering the same visitor twice.
+   */
+  cc?: string[];
   subject: string;
   text: string;
   html?: string;
@@ -80,6 +86,7 @@ export async function sendEmail(input: OutboundEmail): Promise<SendResult> {
       agentMailInbox(),
       {
         to: input.to,
+        ...(input.cc?.length ? { cc: input.cc } : {}),
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),

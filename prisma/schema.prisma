@@ -214,6 +214,15 @@ model Property {
   /// this number minus the viewings actually booked for the week — see lib/viewings.ts.
   weeklyViewingSlots Int @default(3)
 
+  /// The owner's own address, CC'd on enquiries about this home — which is the site's promise
+  /// ("your enquiry reaches them, no middlemen") kept rather than implied.
+  ///
+  /// Nullable because it is not knowable for every listing: a home the curation team sources
+  /// itself has no owner mailbox to copy, and an enquiry that reaches only the team is the
+  /// correct outcome there. Never rendered — `lib/dto.ts` picks fields one by one, so this
+  /// stays server-side unless somebody adds it there on purpose.
+  ownerEmail String?
+
   publishedAt DateTime? @db.Timestamptz(3)
   publishedBy String?
   publisher   Admin?    @relation("PropertyPublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
@@ -377,6 +386,10 @@ model NotificationLog {
   status  NotificationStatus  @default(PENDING)
 
   recipient String
+  /// Everyone else the message actually reached. Recorded rather than derived, because the
+  /// outbox is an audit: "who did this go to" must answer with what was sent, not with what
+  /// the current listing would produce if it were sent again.
+  cc        String[]
   subject   String
   body      String
   error     String?

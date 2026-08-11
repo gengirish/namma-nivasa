@@ -52,6 +52,7 @@ export async function createProperty(input: CreateInput) {
           floorplanUrl: emptyToNull(input.floorplanUrl),
           floorplanNote: input.floorplanNote ?? null,
           weeklyViewingSlots: input.weeklyViewingSlots,
+          ownerEmail: emptyToNull(input.ownerEmail),
           // status stays DRAFT. Publishing is a PATCH, so it is always a deliberate act.
         },
         select: { id: true, slug: true },
@@ -108,6 +109,7 @@ export async function updateProperty(id: string, input: UpdateInput, adminId: st
           ...(input.weeklyViewingSlots !== undefined
             ? { weeklyViewingSlots: input.weeklyViewingSlots }
             : {}),
+          ...(input.ownerEmail !== undefined ? { ownerEmail: emptyToNull(input.ownerEmail) } : {}),
           ...(input.status !== undefined ? { status: input.status as PropertyStatus } : {}),
           // Stamped once, on the first publish. Re-publishing after an archive keeps the
           // original date — that is when the home reached the collection.

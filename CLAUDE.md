@@ -217,6 +217,20 @@ may have sent this" rather than a message that reached a real person with no rec
 log id is also the AgentMail idempotency key, which is what makes a retried send reach a person
 once.
 
+**An enquiry about a home CCs that home's owner.** `Property.ownerEmail` is nullable and the CC
+is dropped when it is unset, so a listing the curation team sources itself still notifies only
+the team. A `GENERAL` enquiry names no property and therefore copies nobody. `copiesFor()`
+strips the primary recipient and de-duplicates before sending, because `NIVASA_TEAM_EMAIL` and an
+owner's address being the same value is ordinary configuration, not a mistake — and nobody should
+receive one enquiry twice for it.
+
+CC rather than BCC on purpose: the team and the owner both need to see who else got it, or they
+answer the same visitor twice. `NotificationLog.cc` records what was actually sent rather than
+recomputing it, because an audit that re-derives its recipients from today's listing answers a
+different question than the one asked. **`ownerEmail` is never rendered to a visitor** — the
+`publicSelect` allowlist in `lib/properties.ts` does not include it, and `PropertyDto` has no
+such field.
+
 ### Email — AgentMail, and what the agent may do alone
 
 `lib/agentmail.ts` is the only file that imports the SDK; everything above it works in terms of

@@ -44,13 +44,14 @@ export async function createEnquiry(input: CreateEnquiryInput): Promise<EnquiryR
     name: string;
     slug: string;
     weeklyViewingSlots: number;
+    ownerEmail: string | null;
   } | null = null;
 
   if (input.kind !== "GENERAL") {
     if (!input.propertySlug) throw new DomainError("That home is no longer listed", 404);
     property = await prisma.property.findFirst({
       where: { slug: input.propertySlug, status: "PUBLISHED" },
-      select: { id: true, name: true, slug: true, weeklyViewingSlots: true },
+      select: { id: true, name: true, slug: true, weeklyViewingSlots: true, ownerEmail: true },
     });
     if (!property) throw new DomainError("That home is no longer listed", 404);
   }
@@ -116,6 +117,9 @@ export async function createEnquiry(input: CreateEnquiryInput): Promise<EnquiryR
     await notify({
       type: scheduledFor ? "VIEWING_BOOKED" : "ENQUIRY_RECEIVED",
       recipient: teamInbox(),
+      // The owner of *this* home, so a site visit reaches the person who has to open the door.
+      // A general enquiry names no property and therefore copies nobody.
+      cc: property?.ownerEmail ? [property.ownerEmail] : undefined,
       subject: `${enquiryHeadline(input.kind)} — ${receipt.propertyName ?? "General"} (${receipt.reference})`,
       body: [
         `${input.name} · ${input.phone}${input.email ? ` · ${input.email}` : ""}`,
