@@ -14,6 +14,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:prod": "node scripts/run-with-env.mjs PW_PROD=1 -- playwright test",
     "test:e2e:report": "playwright show-report",
+    "test:e2e:deployed": "playwright test --config playwright.deployed.config.ts",
     "postinstall": "prisma generate",
     "db:migrate": "node scripts/db-env.mjs prisma migrate dev",
     "db:deploy": "node scripts/db-env.mjs prisma migrate deploy",
@@ -21,7 +22,8 @@
     "db:seed": "node scripts/db-env.mjs tsx prisma/seed.ts",
     "env:pull": "node scripts/pull-env.mjs",
     "db:setup": "node scripts/pull-env.mjs && node scripts/db-env.mjs prisma migrate deploy && node scripts/db-env.mjs tsx prisma/seed.ts",
-    "listing:create": "node scripts/db-env.mjs tsx scripts/create-listing.ts"
+    "listing:create": "node scripts/db-env.mjs tsx scripts/create-listing.ts",
+    "listing:update": "node scripts/db-env.mjs tsx scripts/update-listing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
