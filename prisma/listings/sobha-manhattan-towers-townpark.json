@@ -90,5 +90,7 @@
   "floorplanUrl": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/floorplan-type-a4-unit.png",
   "floorplanNote": "Type A4, Wing 01 — from Sobha's marketing plan dated 29.04.2022, cropped to the unit. Room sizes shown are structural; actual sizes vary with finishes.",
 
-  "weeklyViewingSlots": 3
+  "weeklyViewingSlots": 3,
+
+  "ownerEmail": "gen.girish@gmail.com"
 }
