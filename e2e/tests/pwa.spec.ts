@@ -1,3 +1,4 @@
+import { isAuthConfiguredInEnv } from "../support/env";
 import { expect, test } from "../support/fixtures";
 
 /**
@@ -59,17 +60,34 @@ test.describe("the document", () => {
   });
 
   test("the visitor site loads no auth client", async ({ page }) => {
-    const authRequests: string[] = [];
+    const clerkScripts: string[] = [];
+    const clerkOther: string[] = [];
     page.on("request", (request) => {
-      if (/clerk/i.test(request.url())) authRequests.push(request.url());
+      if (!/clerk/i.test(request.url())) return;
+      if (request.resourceType() === "script") clerkScripts.push(request.url());
+      else clerkOther.push(request.url());
     });
 
     await page.goto("/");
     await page.getByRole("button", { name: "Enquire" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
 
-    // `ClerkProvider` is mounted per-segment, never at the root, precisely so browsing costs a
-    // visitor nothing — and visitors have no accounts by design.
-    expect(authRequests).toEqual([]);
+    // The invariant worth defending: `ClerkProvider` is mounted per-segment, never at the root,
+    // so the visitor page ships no auth *client* — no clerk-js bundle to download, parse and run
+    // for somebody who will never have an account. True with keys configured or without.
+    expect(clerkScripts, "the visitor page must not download an auth client").toEqual([]);
+
+    // Anything else clerk-shaped depends on how the server is configured, and the difference is
+    // worth naming rather than hiding:
+    //
+    //   no keys — `clerkMiddleware` is skipped entirely, so nothing clerk-shaped exists at all.
+    //   keys    — the middleware matcher covers every route (narrowing it is what would let a
+    //             protected route drift out of the pattern), so Clerk runs before our handler
+    //             returns `NextResponse.next()` and negotiates a `__clerk_handshake` on a first
+    //             visit. That is a cookie round-trip, not an auth client — but it is a redirect
+    //             and a third-party request in front of a visitor, so it is not free.
+    if (!isAuthConfiguredInEnv()) {
+      expect(clerkOther, "an unconfigured server should not mention Clerk at all").toEqual([]);
+    }
   });
 });
