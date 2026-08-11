@@ -61,7 +61,7 @@ Other commands: `npm run build` · `npm run lint` · `npm run typecheck` · `npm
   body — is threaded onto the enquiry it belongs to, and gets a suggested reply drafted by Claude
   from a facts block built out of our own rows. A curator approves or edits it at
   `/dashboard/inbox`; autonomous sending is off unless every condition in `autoSendRefusal()`
-  holds.
+  holds — `docs/agent-autosend.md` is the brief on what that switch decides and what is still open.
 - **Dashboard** at `/dashboard`: live counts, the next viewings, an enquiry inbox with status
   triage, the owner-intake queue, listing publish/unpublish/archive, the conversation inbox and
   the outbound audit.

@@ -261,7 +261,8 @@ in ordinary code by `autoSendRefusal()`. Autonomous sending needs *all* of: `NIV
 an intent on a three-entry whitelist, confidence ≥ 80, the model asserting it answered entirely
 from the facts, and the thread's budget of `AUTO_SEND_BUDGET_PER_THREAD` unspent. Anything else
 waits at `/dashboard/inbox`. A model classifying its own message as safe is not a safety control,
-so nothing lets it choose.
+so nothing lets it choose. `docs/agent-autosend.md` carries the whole gate, intent by intent, plus
+the product questions the flag is waiting on — keep it in step with `lib/reply-agent.ts`.
 
 **Rescheduling and cancelling are deliberately off the whitelist.** A moved slot means an owner
 has already been told something that is no longer true, and no email should imply otherwise.
