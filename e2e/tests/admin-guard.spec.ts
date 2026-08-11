@@ -28,6 +28,10 @@ const ADMIN_ROUTES: { method: "get" | "post" | "patch" | "delete"; path: string 
   { method: "delete", path: "/api/admin/properties/some-id" },
   { method: "get", path: "/api/admin/submissions" },
   { method: "patch", path: "/api/admin/submissions/some-id" },
+  // Mints a write token for the Blob store. A refusal here matters more than most: the token is
+  // the credential, so a route that issued one before checking the role would have handed out
+  // write access to every listing's photographs.
+  { method: "post", path: "/api/admin/uploads" },
 ];
 
 test.describe("/api/admin", () => {
