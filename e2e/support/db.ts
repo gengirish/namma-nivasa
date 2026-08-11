@@ -185,6 +185,48 @@ export async function fillWeek(
   return placed;
 }
 
+/**
+ * Gives a seeded listing an owner address for the length of one test, and puts back whatever was
+ * there before.
+ *
+ * Edits a listing that already exists rather than publishing a throwaway one, because the
+ * collection specs assert the page against every PUBLISHED row — a temporary extra home would be
+ * correct in the catalogue and wrong in the count some other spec is holding.
+ */
+export async function setOwnerEmail(
+  slug: string,
+  ownerEmail: string | null,
+): Promise<() => Promise<void>> {
+  const before = await db().property.findUnique({
+    where: { slug },
+    select: { ownerEmail: true },
+  });
+  if (!before) throw new Error(`no property seeded with slug "${slug}" — run npm run db:seed`);
+
+  await db().property.update({ where: { slug }, data: { ownerEmail } });
+
+  return async () => {
+    await db().property.update({ where: { slug }, data: { ownerEmail: before.ownerEmail } });
+  };
+}
+
+/** Every message the app decided to send about one enquiry, oldest first. */
+export async function notificationsFor(enquiryId: string) {
+  return db().notificationLog.findMany({
+    where: { subjectId: enquiryId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      type: true,
+      status: true,
+      recipient: true,
+      cc: true,
+      subject: true,
+      body: true,
+      error: true,
+    },
+  });
+}
+
 /** A listing the public site must never show. Returns a disposer. */
 export async function createUnpublishedProperty(
   marker: string,
