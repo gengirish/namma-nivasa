@@ -159,9 +159,18 @@ never `weekOf(now)` — a booking three weeks out must not be refused because th
 The card badge is the current week by design, so on a Sunday a listing can read "3 slots left"
 while next week is full. Both statements are true; the copy says "this week" for that reason.
 
-A cancelled viewing keeps its row and its slot. Cancelling does not free the time until an admin
-deletes it — an owner who was already told about a visit should not have the same hour resold
-from under them by the next visitor to load the page.
+**A cancelled viewing keeps its hour until it is more than 24 hours away, then the cron gives it
+back.** Cancelling never frees the time immediately: an owner who was already told about a visit
+should not have the same hour resold from under them by the next visitor to load the page. But
+holding it forever quietly starves a listing that only offers three slots a week, so
+`releaseCancelledSlots()` in `lib/reminders.ts` deletes cancelled viewings still more than
+`RELEASE_FLOOR_HOURS` out. Inside that floor the owner may already have arranged their day, and
+the hour stays blocked.
+
+It deletes the `Viewing` and never the `Enquiry` — the lead is history worth keeping, and its
+snapshotted `propertyName` is what makes it readable a year later. The row has to *go* rather
+than change status, because what occupies a slot is the `@@unique([propertyId, scheduledFor])`
+index, not the status field.
 
 ### Time — Asia/Kolkata is a constant, and that is the one shortcut
 
@@ -228,6 +237,20 @@ the team. A `GENERAL` enquiry names no property and therefore copies nobody. `co
 strips the primary recipient and de-duplicates before sending, because `NIVASA_TEAM_EMAIL` and an
 owner's address being the same value is ordinary configuration, not a mistake — and nobody should
 receive one enquiry twice for it.
+
+**Reminders go out the evening before, from a cron.** `vercel.json` schedules
+`/api/cron/viewing-reminders` at `30 12 * * *` — 12:30 UTC is 18:00 IST, when people plan
+tomorrow. The route is the *second* public-and-privileged endpoint after the AgentMail webhook,
+and takes the same posture: authentication is `Authorization: Bearer $CRON_SECRET`, there is no
+session to require so `requireRole()` is not used, and **no secret means 503 rather than running
+for an anonymous caller**. `Viewing.reminderSentAt` is what stops a retried run telling the same
+visitor twice; it is stamped even when delivery failed, because a visible FAILED row in
+`/dashboard/outbox` beats a second copy of "your visit is tomorrow".
+
+The reminder attaches the calendar invite. `lib/ics.ts` is therefore now server-safe: it used to
+emit a *floating* local time built from `getHours()`, which is right only in a Bangalore browser
+and five and a half hours wrong on Vercel. It emits UTC with a `Z` now, so the same event is
+correct in the mail attachment, in the browser download, and for a visitor reading it abroad.
 
 CC rather than BCC on purpose: the team and the owner both need to see who else got it, or they
 answer the same visitor twice. `NotificationLog.cc` records what was actually sent rather than

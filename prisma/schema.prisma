@@ -103,6 +103,7 @@ enum NotificationStatus {
 enum NotificationType {
   ENQUIRY_RECEIVED
   VIEWING_BOOKED
+  VIEWING_REMINDER // sent the evening before, by cron
   OWNER_SUBMISSION_RECEIVED
   NEWSLETTER_WELCOME
   AGENT_REPLY_PENDING // a drafted reply is waiting for a curator
@@ -326,6 +327,12 @@ model Viewing {
   /// The instant the visit starts, stored UTC. The picker offers slots in Asia/Kolkata.
   scheduledFor DateTime      @db.Timestamptz(3)
   status       ViewingStatus @default(BOOKED)
+
+  /// When the evening-before reminder went out, and the reason a retried cron cannot mail the
+  /// same visitor twice. A marker on the row rather than a question asked of `NotificationLog`:
+  /// the guard has to hold for a run that crashed *after* sending, which a log query answers
+  /// less directly than a stamp does.
+  reminderSentAt DateTime? @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)

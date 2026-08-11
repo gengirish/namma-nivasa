@@ -64,6 +64,23 @@ function istCivilToUtc(year: number, month: number, day: number, hour = 0, minut
   return new Date(Date.UTC(year, month, day, hour, minute) - IST_OFFSET_MINUTES * MS_PER_MINUTE);
 }
 
+/**
+ * The UTC window covering one Bangalore day, `offsetDays` from the day `at` falls in.
+ * `istDayWindow(1)` is "tomorrow in Bangalore", which is what the reminder cron asks for.
+ *
+ * Here rather than at the caller because this file owns the offset: a caller computing a day
+ * boundary from `getHours()` would be right on a laptop in Bangalore and five and a half hours
+ * wrong on the server that actually runs it. `Date.UTC` normalises overflow, so the last day of
+ * a month and of a year need no special case.
+ */
+export function istDayWindow(offsetDays: number, at: Date = new Date()): { start: Date; end: Date } {
+  const { year, month, day } = istParts(at);
+  return {
+    start: istCivilToUtc(year, month, day + offsetDays),
+    end: istCivilToUtc(year, month, day + offsetDays + 1),
+  };
+}
+
 /** `YYYY-MM-DD` as it reads in Bangalore. */
 export function istDateString(at: Date = new Date()): string {
   const { year, month, day } = istParts(at);

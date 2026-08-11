@@ -186,6 +186,51 @@ export async function fillWeek(
 }
 
 /**
+ * A viewing at an exact instant, with the enquiry that owns it.
+ *
+ * Unlike `bookSlot`, this takes a `Date` rather than a date/time from the picker's grid, because
+ * the reminder specs care about the clock — "more than 24 hours out", "inside tomorrow in
+ * Bangalore" — and not about which hours a visitor may choose. Writing straight to the database
+ * is also what lets a spec arrange a CANCELLED viewing, which no public route can produce.
+ */
+export async function seedViewing(opts: {
+  property: { id: string; name: string };
+  scheduledFor: Date;
+  marker: string;
+  /** Distinguishes several viewings inside one test; references are unique. */
+  suffix: string;
+  email?: string | null;
+  status?: "BOOKED" | "CANCELLED";
+}): Promise<{ reference: string; enquiryId: string; viewingId: string }> {
+  const status = opts.status ?? "BOOKED";
+  const reference = `NIV-${opts.marker.slice(-4).toUpperCase()}${opts.suffix.toUpperCase()}`;
+
+  const enquiry = await db().enquiry.create({
+    data: {
+      reference,
+      kind: "SITE_VISIT",
+      status: status === "CANCELLED" ? "CANCELLED" : "SCHEDULED",
+      propertyId: opts.property.id,
+      propertyName: opts.property.name,
+      name: `${opts.marker} Visitor`,
+      phone: "+919000000002",
+      email: opts.email ?? null,
+      viewing: {
+        create: { propertyId: opts.property.id, scheduledFor: opts.scheduledFor, status },
+      },
+    },
+    select: { id: true, viewing: { select: { id: true } } },
+  });
+
+  return { reference, enquiryId: enquiry.id, viewingId: enquiry.viewing!.id };
+}
+
+/** Whether a viewing row still exists — the question `releaseCancelledSlots()` answers. */
+export async function viewingExists(viewingId: string): Promise<boolean> {
+  return (await db().viewing.count({ where: { id: viewingId } })) > 0;
+}
+
+/**
  * Gives a seeded listing an owner address for the length of one test, and puts back whatever was
  * there before.
  *

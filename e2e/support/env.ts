@@ -97,6 +97,16 @@ export const E2E_WEBHOOK_SECRET = "whsec_ZTJlLXRlc3Qtc2VjcmV0LW5vdC1hLXJlYWwtb25
 export const E2E_TEAM_INBOX = "e2e-team@nivasa.invalid";
 
 /**
+ * The bearer token the reminder cron accepts under test.
+ *
+ * Pinned for the same reason as the webhook secret and the team inbox: the real `CRON_SECRET` is
+ * a production credential, and a spec that read it would both depend on a developer's
+ * `.env.local` and put that secret in a test file's assertions. The endpoint it unlocks only
+ * reaches a dev server on :3187 whose mail provider is blanked.
+ */
+export const E2E_CRON_SECRET = "e2e-cron-secret-not-a-real-one";
+
+/**
  * What the server under test must NOT have.
  *
  * The webhook spec drives the real handler, and the real handler's next step is to call a model
@@ -116,4 +126,5 @@ export const E2E_SERVER_ENV: Record<string, string> = {
   ANTHROPIC_API_KEY: "",
   NIVASA_AGENT_AUTOSEND: "",
   NIVASA_TEAM_EMAIL: E2E_TEAM_INBOX,
+  CRON_SECRET: E2E_CRON_SECRET,
 };

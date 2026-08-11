@@ -50,6 +50,8 @@ export interface OutboundEmail {
   subject: string;
   text: string;
   html?: string;
+  /** Base64 `content`, which is the shape AgentMail's `SendAttachment` takes. */
+  attachments?: { filename: string; contentType: string; content: string }[];
   /**
    * Passed to AgentMail as `Idempotency-Key`. Give it a stable id from our own tables — a
    * NotificationLog id, an AgentDraft id — so a retried request reaches a real person once.
@@ -90,6 +92,7 @@ export async function sendEmail(input: OutboundEmail): Promise<SendResult> {
         subject: input.subject,
         text: input.text,
         ...(input.html ? { html: input.html } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       },
       input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
     );

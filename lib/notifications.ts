@@ -34,6 +34,11 @@ export interface NotifyInput {
   cc?: string[];
   subject: string;
   body: string;
+  /**
+   * Files to send alongside. Not recorded on the log row: the row exists to answer "what did we
+   * say to whom", and a base64 calendar blob in the audit would bury that under its own weight.
+   */
+  attachments?: { filename: string; contentType: string; content: string }[];
   subjectId?: string | null;
 }
 
@@ -80,6 +85,7 @@ async function deliverEmail(
     ...(cc.length ? { cc } : {}),
     subject: input.subject,
     text: input.body,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     idempotencyKey: logId,
   });
 
