@@ -60,6 +60,11 @@ npm run test:e2e:prod    # against a production build rather than `next dev`
 npm run test:e2e:report  # open the last HTML report
 npm run test:e2e:deployed # read-only smoke against a deployed server (no database)
 
+# Listings. Note the `--`; without it npm keeps the path for itself. Both print which database
+# they are about to write to, because local and production are one `export DATABASE_URL=` apart.
+npm run listing:create -- prisma/listings/<slug>.json   # lands DRAFT, as the route does
+npm run listing:update -- prisma/listings/<slug>.json   # matches on slug; keeps PUBLISHED
+
 npm run db:migrate       # prisma migrate dev    (all db:* go through scripts/db-env.mjs)
 npm run db:deploy        # prisma migrate deploy — production, never `db push`
 npm run db:seed          # prisma/seed.ts — idempotent, upserts by slug

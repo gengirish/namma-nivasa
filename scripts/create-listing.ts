@@ -25,12 +25,19 @@ import { createProperty } from "@/lib/admin-properties";
 import { prisma } from "@/lib/prisma";
 import { propertyCreateSchema } from "@/lib/validations";
 
+import { databaseTarget } from "./db-target";
+
 async function main() {
   const arg = process.argv[2];
   if (!arg) {
-    console.error("usage: tsx scripts/create-listing.ts <path-to-listing.json>");
+    console.error("usage: npm run listing:create -- <path-to-listing.json>");
+    console.error("  the `--` matters; without it npm keeps the argument for itself.");
+    console.error("\ne.g. npm run listing:create -- prisma/listings/my-home.json");
+    console.error(`\nWould have written to: ${databaseTarget()}`);
     process.exit(1);
   }
+
+  console.log(`Database: ${databaseTarget()}`);
 
   const path = resolve(process.cwd(), arg);
   const raw = JSON.parse(readFileSync(path, "utf8"));
