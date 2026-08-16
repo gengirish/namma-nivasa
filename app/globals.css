@@ -316,6 +316,11 @@ main [id] {
   align-items: center;
   justify-content: center;
 }
+/* The detail page is the one dark surface a map lands on; unfiltered OSM tiles glare against it.
+   Tiles only — the pin and the attribution keep their own contrast. */
+.nv-map-dark .leaflet-tile {
+  filter: brightness(0.84) saturate(0.72) contrast(1.04);
+}
 
 /* -------------------------------------------------------------- breakpoints */
 

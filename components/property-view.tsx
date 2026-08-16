@@ -13,6 +13,7 @@ import {
 } from "@/lib/graphics";
 
 import { useNivasa } from "./nivasa-store";
+import { PropertyMap } from "./property-map";
 import { AvailabilityDot, Eyebrow, Heart, Photo, Reveal, SERIF } from "./ui";
 
 const actionButton: React.CSSProperties = {
@@ -219,8 +220,167 @@ export function PropertyView({ property }: { property: PropertyDto }) {
             paddingBottom: 80,
           }}
         >
-          {/* ------------------------------------------------------ story */}
           <div>
+            {/* ---------------------------------------------- floor plan */}
+            <DarkEyebrow>Floor Plan</DarkEyebrow>
+            <div
+              style={{
+                border: "1px solid #2e2825",
+                borderRadius: 6,
+                overflow: "hidden",
+                background: "#1F1B18",
+                margin: "16px 0 8px",
+              }}
+            >
+              <Photo
+                src={property.floorplanUrl ?? svgUri(FLOORPLAN_PLACEHOLDER)}
+                fallback={svgUri(FLOORPLAN_PLACEHOLDER)}
+                alt={`${property.name} floor plan`}
+                style={{ width: "100%", height: "auto", display: "block" }}
+              />
+            </div>
+            <p style={{ fontSize: "0.7rem", color: "#7d766f", margin: "0 0 32px" }}>
+              {property.floorplanNote ?? "Illustrative floor plan — not to scale."}
+            </p>
+
+            {/* ------------------------------------------------ location */}
+            <DarkEyebrow>Location</DarkEyebrow>
+            <div style={{ margin: "16px 0 10px" }}>
+              <PropertyMap
+                latitude={property.latitude}
+                longitude={property.longitude}
+                name={property.name}
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                flexWrap: "wrap",
+                margin: "0 0 32px",
+              }}
+            >
+              <p style={{ fontSize: "0.7rem", color: "#7d766f", margin: 0, maxWidth: 420 }}>
+                Approximate locality shown — the exact address is shared once a visit is confirmed.
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${property.latitude},${property.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    color: "#C99A3F",
+                    fontSize: "0.74rem",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    textDecoration: "none",
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path d="M12 21s7-6.3 7-11a7 7 0 10-14 0c0 4.7 7 11 7 11z" />
+                    <circle cx="12" cy="10" r="2.5" />
+                  </svg>
+                  Get directions
+                </a>
+                <button
+                  onClick={s.openMap}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    color: "#948C84",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: "0.74rem",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  All homes on the map
+                </button>
+              </div>
+            </div>
+
+            {/* -------------------------------------------- neighbourhood */}
+            {property.hood.length > 0 && (
+              <>
+                <DarkEyebrow>Neighbourhood</DarkEyebrow>
+                <p
+                  style={{
+                    color: "#C0BAB2",
+                    fontSize: "1rem",
+                    fontWeight: 300,
+                    margin: "12px 0 20px",
+                    textWrap: "pretty",
+                  }}
+                >
+                  {property.hoodBlurb}
+                </p>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))",
+                    gap: 12,
+                    margin: "0 0 32px",
+                  }}
+                >
+                  {property.hood.map((place) => (
+                    <Reveal
+                      key={`${place.kind}-${place.name}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "14px 16px",
+                        border: "1px solid #2e2825",
+                        borderRadius: 6,
+                        background: "#1F1B18",
+                      }}
+                    >
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          width: 40,
+                          height: 40,
+                          borderRadius: "50%",
+                          background: "#26211D",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Photo src={svgUri(HOOD_ICON[place.kind])} alt="" style={{ width: 22, height: 22 }} />
+                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <p
+                          style={{
+                            fontSize: "0.92rem",
+                            color: "#F5F0E8",
+                            margin: "0 0 2px",
+                            fontWeight: 400,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {place.name}
+                        </p>
+                        <p style={{ fontSize: "0.74rem", color: "#948C84", margin: 0, letterSpacing: "0.02em" }}>
+                          {HOOD_LABEL[place.kind]} · {place.distance}
+                        </p>
+                      </div>
+                    </Reveal>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ------------------------------------------------------ story */}
             <DarkEyebrow>Why we chose this home</DarkEyebrow>
             <p
               style={{
@@ -385,102 +545,6 @@ export function PropertyView({ property }: { property: PropertyDto }) {
                   </span>
                 </button>
                 <div style={{ marginBottom: 32 }} />
-              </>
-            )}
-
-            {/* ---------------------------------------------- floor plan */}
-            <DarkEyebrow>Floor Plan</DarkEyebrow>
-            <div
-              style={{
-                border: "1px solid #2e2825",
-                borderRadius: 6,
-                overflow: "hidden",
-                background: "#1F1B18",
-                margin: "16px 0 8px",
-              }}
-            >
-              <Photo
-                src={property.floorplanUrl ?? svgUri(FLOORPLAN_PLACEHOLDER)}
-                fallback={svgUri(FLOORPLAN_PLACEHOLDER)}
-                alt={`${property.name} floor plan`}
-                style={{ width: "100%", height: "auto", display: "block" }}
-              />
-            </div>
-            <p style={{ fontSize: "0.7rem", color: "#7d766f", margin: "0 0 32px" }}>
-              {property.floorplanNote ?? "Illustrative floor plan — not to scale."}
-            </p>
-
-            {/* -------------------------------------------- neighbourhood */}
-            {property.hood.length > 0 && (
-              <>
-                <DarkEyebrow>Neighbourhood</DarkEyebrow>
-                <p
-                  style={{
-                    color: "#C0BAB2",
-                    fontSize: "1rem",
-                    fontWeight: 300,
-                    margin: "12px 0 20px",
-                    textWrap: "pretty",
-                  }}
-                >
-                  {property.hoodBlurb}
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))",
-                    gap: 12,
-                    margin: "0 0 32px",
-                  }}
-                >
-                  {property.hood.map((place) => (
-                    <Reveal
-                      key={`${place.kind}-${place.name}`}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 14,
-                        padding: "14px 16px",
-                        border: "1px solid #2e2825",
-                        borderRadius: 6,
-                        background: "#1F1B18",
-                      }}
-                    >
-                      <span
-                        style={{
-                          flexShrink: 0,
-                          width: 40,
-                          height: 40,
-                          borderRadius: "50%",
-                          background: "#26211D",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Photo src={svgUri(HOOD_ICON[place.kind])} alt="" style={{ width: 22, height: 22 }} />
-                      </span>
-                      <div style={{ minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontSize: "0.92rem",
-                            color: "#F5F0E8",
-                            margin: "0 0 2px",
-                            fontWeight: 400,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {place.name}
-                        </p>
-                        <p style={{ fontSize: "0.74rem", color: "#948C84", margin: 0, letterSpacing: "0.02em" }}>
-                          {HOOD_LABEL[place.kind]} · {place.distance}
-                        </p>
-                      </div>
-                    </Reveal>
-                  ))}
-                </div>
               </>
             )}
           </div>
