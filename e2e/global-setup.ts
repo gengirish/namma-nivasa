@@ -6,9 +6,10 @@
  * harmless against the throwaway container and none of them are against a real one, so the check
  * is a hard stop rather than a warning.
  */
+import { clerkSetup } from "@clerk/testing/playwright";
 import type { FullConfig } from "@playwright/test";
 
-import { databaseUrl, loadLocalEnv } from "./support/env";
+import { databaseUrl, isAuthConfiguredInEnv, loadLocalEnv } from "./support/env";
 import { db, disconnectDb, purgeAllE2EData } from "./support/db";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "host.docker.internal", "postgres", "db"]);
@@ -139,6 +140,23 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   // A run killed halfway leaves booked slots behind, and those come out of a real weekly quota.
   await purgeAllE2EData();
   await disconnectDb();
+
+  /**
+   * A Testing Token, so Clerk does not challenge an automated browser with a captcha. Only
+   * meaningful when keys are configured — without them the dashboard is unreachable by design and
+   * the specs that need a session skip themselves. Failure here is not fatal for the same reason:
+   * the rest of the suite tests a site that has no accounts at all.
+   */
+  if (isAuthConfiguredInEnv()) {
+    try {
+      await clerkSetup();
+    } catch (err) {
+      console.warn(
+        `[e2e] clerkSetup() failed (${(err as Error).message}). Signed-in specs will fail; ` +
+          "the rest of the suite is unaffected.",
+      );
+    }
+  }
 
   const baseURL = config.projects[0]?.use?.baseURL;
   if (baseURL) await warmRoutes(baseURL, published[0].slug);

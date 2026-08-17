@@ -32,17 +32,25 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 | PWA | `public/manifest.webmanifest`, `public/sw.js`, `scripts/generate-icons.mjs` |
 | E2E tests | `playwright.config.ts`, `e2e/tests/*.spec.ts`, `e2e/support/*` |
 | Deployed smoke | `playwright.deployed.config.ts`, `e2e/smoke/*.spec.ts` — read-only, no database |
+| CI | `.github/workflows/ci.yml` — lint, typecheck, and the suite against a Postgres service |
 
 **Not built — do not assume these exist:**
 
 - **No SMS provider.** Email goes through AgentMail (see "Email" below); nothing sends SMS,
   despite every enquiry carrying a normalized phone number.
-- **No image upload.** `Property.heroImageUrl` / `PropertyImage.url` are URLs a curator supplies.
-  The owner-intake form records *how many* files an owner has, never the bytes.
-- **No listing editor UI.** `/dashboard/properties` can publish, unpublish and archive; creating
-  and editing a listing goes through `POST`/`PATCH /api/admin/properties` (or the seed).
+- **No owner-side upload.** A *curator* can upload listing photos — `app/api/admin/uploads/route.ts`
+  mints a short-lived Vercel Blob token and the browser sends the bytes straight to the store, so
+  they never pass through a function. The **owner-intake form still records only how many files an
+  owner has**, never the bytes; nothing on the visitor side accepts a file.
 - **No unit tests.** There is a Playwright E2E suite (see "Tests" below); there is no vitest,
-  so `lib/` is covered only through the routes and pages that call it.
+  so `lib/` is covered through the routes and pages that call it, plus the few pure functions the
+  suite imports directly (`autoSendRefusal`, `buildIcsContent`, `replyTo`).
+
+**Recently built, and easy to miss:**
+
+- **The listing editor.** `/dashboard/properties/[id]` is a full form — the only way to change a
+  home's copy without a connection string. `/dashboard/properties` still publishes, unpublishes and
+  archives; `POST`/`PATCH /api/admin/properties` and the `listing:*` scripts remain the other ways in.
 
 ## Commands
 
@@ -321,6 +329,49 @@ Playwright only, in `e2e/`. `npm run test:e2e` starts its own `next dev` on **:3
 it — no separate step, and never the server on :3000, because a suite that quietly tested
 whatever was already running (against whatever database it was started with) is worse than one
 that refuses to start.
+
+**CI runs it on every push.** `.github/workflows/ci.yml` — lint and typecheck in one job, the
+suite in another against a `postgres:17-alpine` service container it migrates and seeds itself.
+`npm run test:e2e:deployed` is deliberately *not* in it: that one talks to production, and nothing
+on a push trigger should.
+
+What the suite covers, roughly:
+
+| Area | Specs |
+|---|---|
+| Catalogue, filter, FAQ, newsletter, footer | `catalogue.spec.ts` |
+| A listing: copy, gallery, video, brochure | `property-detail.spec.ts` |
+| Both maps, and the coordinates behind them | `map.spec.ts` |
+| Booking: the unique index, the weekly cap, the target week | `booking.spec.ts` |
+| Enquiries, phone normalization, the modal | `enquiry.spec.ts` |
+| Public API shapes, availability, rate limiting | `api-public.spec.ts` |
+| Who a lead is sent to, and the no-provider state | `notifications.spec.ts` |
+| The reminder cron and cancelled-slot release | `reminders.spec.ts` |
+| The calendar invite, on both paths it travels | `calendar-invite.spec.ts` |
+| The inbound webhook's three refusals, idempotency | `inbound-email.spec.ts` |
+| The autonomy gate, condition by condition | `autosend-gate.spec.ts` |
+| The admin boundary with no session | `admin-guard.spec.ts` |
+| The admin API and the editor **with** a session | `admin-api.spec.ts`, `dashboard.spec.ts` |
+| Owner intake, shortlist, PWA, responsive, voice | one spec each |
+
+What it deliberately does not: reach a model, send real mail, or write to production. It also
+never covers the *content* of a model reply — only the gate that decides what may be done with one.
+
+**The signed-in specs are written but gated off** — `E2E_CLERK=1` *and* Clerk keys, or they skip.
+`e2e/support/clerk.ts` signs in for real rather than bypassing auth: a test-only branch in
+`getClerkUserId()` would sit one misconfiguration away from production. It find-or-creates one
+Clerk user per role and the matching `Admin` row — the row is what `requireRole()` reads, so
+creating only the Clerk user gets a correct 403 rather than a session.
+
+They are gated because **the server does not currently accept the session they create**, and the
+reason is not in the tests. The browser ends up with a valid `__session` whose `iss` matches the
+publishable key, whose `azp` is the server under test, which is unexpired, which is sent on the
+request, and which `verifyToken()` accepts using the very `CLERK_SECRET_KEY` the server runs with
+— and `auth()` still reports signed out, in `middleware.ts` and in `/api/admin/bootstrap` alike.
+That pairing is worth resolving (the dev server warns that the `middleware` convention is
+deprecated in favour of `proxy`, and Clerk warns `createRouteMatcher` is going away), and it may
+mean the dashboard is unreachable for a real curator too — worth checking before the next release.
+The header comment in `e2e/support/clerk.ts` lists everything that was ruled out.
 
 **They need a real database, and they write to it.** `app/page.tsx` is a server component that
 loads the whole catalogue before any JavaScript runs, so there is no request a browser could

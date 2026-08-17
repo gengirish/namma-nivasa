@@ -1,0 +1,111 @@
+# Lint, typecheck, and the end-to-end suite.
+#
+# The suite is not mockable — `app/page.tsx` server-renders the whole catalogue before any
+# JavaScript runs — so this workflow gives it what it needs: a real Postgres, migrated and seeded,
+# on localhost. `e2e/global-setup.ts` accepts localhost without `E2E_ALLOW_REMOTE_DB`, which is
+# what keeps this workflow incapable of writing to anything that matters.
+#
+# `test:e2e:deployed` is deliberately absent. It talks to production, and nothing that runs on
+# every push should.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # `postinstall` runs `prisma generate`, so the client exists before tsc looks for it.
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  e2e:
+    name: e2e (chromium + mobile)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nivasa
+          POSTGRES_PASSWORD: nivasa
+          POSTGRES_DB: nivasa
+        ports:
+          - 5432:5432
+        # Without this the first migration can race the server's own startup.
+        options: >-
+          --health-cmd "pg_isready -U nivasa"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Both, explicitly: the schema declares `directUrl`, and the Prisma CLI reads it directly
+      # rather than through `scripts/db-env.mjs` here. There is no Neon prefix to resolve on a
+      # service container, so the launcher would only obscure what is being connected to.
+      DATABASE_URL: postgresql://nivasa:nivasa@localhost:5432/nivasa
+      DIRECT_URL: postgresql://nivasa:nivasa@localhost:5432/nivasa
+      # Present only once a Clerk *development* instance is configured as repository secrets.
+      # Absent, they arrive as empty strings, `isAuthConfiguredInEnv()` is false, and the specs
+      # that need a signed-in curator skip rather than fail — the same result as a developer
+      # machine with no keys.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY_TEST }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Migrate
+        run: npx prisma migrate deploy
+
+      - name: Seed the catalogue
+        # Through the repo's own script: it is what a developer runs, and `global-setup.ts`
+        # refuses to start unless at least two listings are published by it.
+        run: npm run db:seed
+
+      # Only chromium: `playwright.config.ts` runs both projects on it, and no spec needs another
+      # engine.
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the suite
+        # `playwright.config.ts` reads CI itself — forbidOnly, one retry, the github reporter.
+        run: npm run test:e2e
+
+      - name: Upload the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      # Traces, screenshots and video for a failed test; the report links to them.
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

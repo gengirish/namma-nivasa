@@ -42,6 +42,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@clerk/backend": "^3.16.6",
+    "@clerk/testing": "^2.2.24",
     "@playwright/test": "^1.62.1",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^20",
