@@ -87,16 +87,44 @@ export function isAuthConfiguredInEnv(): boolean {
 export const E2E_WEBHOOK_SECRET = "whsec_ZTJlLXRlc3Qtc2VjcmV0LW5vdC1hLXJlYWwtb25lLg==";
 
 /**
+ * Where the server under test addresses team notifications.
+ *
+ * Pinned for the same reason the webhook secret is: `NIVASA_TEAM_EMAIL` is a real mailbox in a
+ * populated `.env.local`, so a suite that read it would assert against whatever address the
+ * developer happened to configure, and would write that person's address into every
+ * NotificationLog row it created. `.invalid` is reserved by RFC 2606 and can never resolve.
+ */
+export const E2E_TEAM_INBOX = "e2e-team@nivasa.invalid";
+
+/**
+ * The bearer token the reminder cron accepts under test.
+ *
+ * Pinned for the same reason as the webhook secret and the team inbox: the real `CRON_SECRET` is
+ * a production credential, and a spec that read it would both depend on a developer's
+ * `.env.local` and put that secret in a test file's assertions. The endpoint it unlocks only
+ * reaches a dev server on :3187 whose mail provider is blanked.
+ */
+export const E2E_CRON_SECRET = "e2e-cron-secret-not-a-real-one";
+
+/**
  * What the server under test must NOT have.
  *
  * The webhook spec drives the real handler, and the real handler's next step is to call a model
- * and then send email to whatever address the payload names. Blanking these two makes that
+ * and then send email to whatever address the payload names. Blanking these makes that
  * impossible rather than unlikely — a suite that could email a stranger because someone's
  * `.env.local` was fully populated is not a suite anyone should run twice.
+ *
+ * `AGENTMAIL_INBOX_ID` is the load-bearing blank: `agentMailConfigured()` needs both halves, so
+ * clearing the inbox alone guarantees every `notify()` lands SKIPPED with the reason recorded.
+ * That is what makes the outbound path assertable — the CC is computed and written to the log
+ * row before delivery is attempted, so the specs can read exactly who a message *would* have
+ * reached without anything leaving the machine.
  */
 export const E2E_SERVER_ENV: Record<string, string> = {
   AGENTMAIL_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
   AGENTMAIL_INBOX_ID: "",
   ANTHROPIC_API_KEY: "",
   NIVASA_AGENT_AUTOSEND: "",
+  NIVASA_TEAM_EMAIL: E2E_TEAM_INBOX,
+  CRON_SECRET: E2E_CRON_SECRET,
 };

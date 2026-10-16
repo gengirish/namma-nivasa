@@ -1,0 +1,96 @@
+{
+  "_assumptions": [
+    "areaSqft/area/areaLabel — ASSUMED. The Type A4 marketing plan dimensions every room but states no total. The stated rooms sum to ~107.4 sq m (~1,156 sqft), which excludes internal walls and circulation and is therefore near-carpet, not super built-up. 1,700 sqft SBA is that carpet figure at a conventional ~1.47 loading. Replace with Sobha's published figure before publishing.",
+    "latitude/longitude — ASSUMED. Approximate pin for Yadavanahalli on the NH 44 alignment, accurate to roughly a kilometre, not to the tower. Replace with the real pin before publishing.",
+    "amenities — GYM is inferred from the clubhouse shown as Wing 03 on the key plan, not from a photograph. POWER is evidenced by the DG sump marked on the same plan. The rest are visible in the supplied images.",
+    "Everything else is taken from the supplied photographs and from the architect's plan (Sobha Manhattan Towers, Type A4, Wing 01, drawing AM-130 dated 29.04.2022)."
+  ],
+
+  "slug": "sobha-manhattan-towers-townpark",
+  "name": "Sobha Manhattan Towers, Townpark",
+  "location": "Yadavanahalli, Hosur Road, Bangalore",
+  "locality": "Yadavanahalli",
+
+  "tagline": "A three-bedroom Type A4 on south Hosur Road, handing over December 2026.",
+
+  "story": "Sobha builds what it sells — its own glazing, joinery and concrete plants rather than sub-contractors — and it shows on a site visit faster than in any brochure. Manhattan Towers is its New York-themed address on south Hosur Road: five wings around a central clubhouse, an arched limestone-toned facade, and a lap pool the length of the podium.",
+
+  "description": [
+    "Wing 01 is standing and its lobby is fitted; handover is December 2026. This is a Type A4 apartment in that wing — three bedrooms, three bathrooms, and a living and dining space that runs five and a half metres deep from the entry foyer. The master bedroom is 3.7m by 4.0m with its own balcony; the second and third bedrooms are near-identical at roughly 3.4m by 3.5m, with the third opening onto a second, longer balcony off the living room. The kitchen is 3.1m by 3.2m with a separate utility behind it, so the washing machine and the service door stay out of the cooking space.",
+    "Room sizes on the architect's plan are structural, measured before finishes, so the usable figures land slightly under them. The plan reproduced below is the marketing drawing for Type A4, Wing 01, dated April 2022.",
+    "The building is finished enough to walk: the towers, the podium parking, the clubhouse and the double-height lobby are all standing today. The pool, the fountain court and the landscaped arrival are still renders at the time of listing — worth knowing before a site visit, so you see what is there rather than what was pictured.",
+    "What makes the address worth watching is what is being built around it. A metro station is proposed within walking distance, a Lulu Mall is planned directly opposite the tower, the peripheral ring road alignment runs about two kilometres away, and a proposed international cricket stadium sits roughly eight kilometres out. None of these are open yet. All of them are the reason this stretch of Hosur Road is priced as a bet on 2027 rather than on today."
+  ],
+
+  "bhk": "3 BHK",
+  "bhkNum": 3,
+
+  "areaLabel": "Super Built-up Area",
+  "area": "1,700 sqft",
+  "areaSqft": 1700,
+
+  "pricePaise": 2500000000,
+
+  "latitude": 12.759,
+  "longitude": 77.701,
+
+  "amenities": ["POOL", "GARDEN", "LIFT", "PARKING", "SECURITY", "POWER", "GYM"],
+
+  "hoodBlurb": "Yadavanahalli sits on the southern run of Hosur Road, past Bommasandra and towards Attibele — the industrial and biotech belt that Infosys, Biocon and the Bommasandra hardware park anchor. It is a corridor in the middle of being rebuilt: most of what makes it attractive is proposed or under construction rather than open, and the honest way to read the neighbourhood is as a five-year view rather than a today view.",
+
+  "hood": [
+    { "kind": "TRANSIT", "name": "Proposed metro station", "distance": "Proposed — a few minutes' walk" },
+    { "kind": "TRANSIT", "name": "Bengaluru–Hosur highway (NH 44)", "distance": "Directly adjoining" },
+    { "kind": "TRANSIT", "name": "Proposed peripheral ring road", "distance": "About 2 km" },
+    { "kind": "SHOPPING", "name": "Upcoming Lulu Mall", "distance": "Planned opposite the tower" },
+    { "kind": "PARK", "name": "Proposed international cricket stadium", "distance": "About 8 km" }
+  ],
+
+  "heroImageUrl": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/01-pool-and-facade.jpg",
+
+  "images": [
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/01-pool-and-facade.jpg",
+      "alt": "Artist's impression — the lap pool at dusk, against the tower's arched, warmly lit facade"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/02-pool-deck.jpg",
+      "alt": "Artist's impression — loungers along the pool deck, with the residential wings rising behind"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/03-towers-elevation.jpg",
+      "alt": "Artist's impression — the four Manhattan Towers wings lit against an evening sky"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/04-fountain-courtyard.jpg",
+      "alt": "Artist's impression — the fountain court, with a stone arch and clipped landscaping"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/05-entrance-arch.jpg",
+      "alt": "Artist's impression — the arched gateway at the entrance, seen from the approach road"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/06-clock-tower.jpg",
+      "alt": "Artist's impression — the cast street clock standing at the compound entrance"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/07-towers-from-podium.jpg",
+      "alt": "Site photograph — the completed towers seen from the podium level, looking up"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/08-clubhouse-lawn.jpg",
+      "alt": "Site photograph — the Sobha Townpark clubhouse lit at night, across the lawn"
+    },
+    {
+      "url": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/09-lobby.jpg",
+      "alt": "Site photograph — the double-height lobby, with a Manhattan skyline screen above the desk"
+    }
+  ],
+
+  "floorplanUrl": "https://ww1pyvabqeni87fe.public.blob.vercel-storage.com/properties/sobha-manhattan-towers-townpark/floorplan-type-a4-unit.png",
+  "floorplanNote": "Type A4, Wing 01 — from Sobha's marketing plan dated 29.04.2022, cropped to the unit. Room sizes shown are structural; actual sizes vary with finishes.",
+
+  "weeklyViewingSlots": 3,
+
+  "ownerEmail": "gen.girish@gmail.com"
+}

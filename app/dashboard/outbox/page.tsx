@@ -53,7 +53,14 @@ export default async function OutboxPage() {
                   <td style={{ ...td, whiteSpace: "nowrap", color: "#78716C" }}>
                     {formatIst(log.createdAt, true)}
                   </td>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>{log.recipient}</td>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                    <div>{log.recipient}</div>
+                    {log.cc.length > 0 && (
+                      <div style={{ fontSize: "0.72rem", color: "#78716C", marginTop: 4 }}>
+                        cc {log.cc.join(", ")}
+                      </div>
+                    )}
+                  </td>
                   <td style={td}>
                     <div style={{ color: "#1C1917" }}>{log.subject}</div>
                     <pre

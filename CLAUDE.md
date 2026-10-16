@@ -26,20 +26,37 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 | Public API | `app/api/{properties,enquiries,owner-submissions,subscribers}` |
 | Admin API | `app/api/admin/{bootstrap,properties,enquiries,submissions,drafts}` |
 | Visitor UI | `app/page.tsx` → `components/nivasa-*`, `components/{home,property,map,list-property}-view.tsx` |
+| Client-side extras | `lib/brochure.ts` (printable brochure + WhatsApp share), `lib/ics.ts`, `lib/voice.ts` → `components/voice-concierge.tsx`, `lib/persisted-ids.ts` (shortlist/recent stores), `lib/graphics.ts` |
+| Shared spine | `lib/prisma.ts`, `lib/api-response.ts`, `lib/validations.ts`, `lib/rate-limit.ts`, `lib/site-url.ts`, `lib/content.ts`, `lib/types.ts` |
 | Dashboard | `app/dashboard/*`, `components/dashboard/*` |
 | PWA | `public/manifest.webmanifest`, `public/sw.js`, `scripts/generate-icons.mjs` |
 | E2E tests | `playwright.config.ts`, `e2e/tests/*.spec.ts`, `e2e/support/*` |
+| Deployed smoke | `playwright.deployed.config.ts`, `e2e/smoke/*.spec.ts` — read-only, no database |
+| CI | `.github/workflows/ci.yml` — lint, typecheck, and the suite against a Postgres service |
 
 **Not built — do not assume these exist:**
 
 - **No SMS provider.** Email goes through AgentMail (see "Email" below); nothing sends SMS,
   despite every enquiry carrying a normalized phone number.
-- **No image upload.** `Property.heroImageUrl` / `PropertyImage.url` are URLs a curator supplies.
-  The owner-intake form records *how many* files an owner has, never the bytes.
-- **No listing editor UI.** `/dashboard/properties` can publish, unpublish and archive; creating
-  and editing a listing goes through `POST`/`PATCH /api/admin/properties` (or the seed).
+- **No owner-side upload.** A *curator* can upload listing photos — `app/api/admin/uploads/route.ts`
+  mints a short-lived Vercel Blob token and the browser sends the bytes straight to the store, so
+  they never pass through a function. The **owner-intake form still records only how many files an
+  owner has**, never the bytes; nothing on the visitor side accepts a file.
 - **No unit tests.** There is a Playwright E2E suite (see "Tests" below); there is no vitest,
-  so `lib/` is covered only through the routes and pages that call it.
+  so `lib/` is covered through the routes and pages that call it, plus the few pure functions the
+  suite imports directly (`autoSendRefusal`, `buildIcsContent`, `replyTo`).
+
+**Recently built, and easy to miss:**
+
+- **The listing editor.** `/dashboard/properties/[id]` is a full form — the only way to change a
+  home's copy without a connection string. `/dashboard/properties` still publishes, unpublishes and
+  archives; `POST`/`PATCH /api/admin/properties` and the `listing:*` scripts remain the other ways in.
+- **Intake → listing.** An ACCEPTED row on `/dashboard/submissions` gets *Create listing*
+  (`POST /api/admin/submissions/[id]/listing` → `createListingFromSubmission()`). It makes a DRAFT
+  with blank copy, no photo and a 0,0 pin, so `tagline`/`story`/`heroImageUrl` may be empty on a
+  draft — `missingForPublish()` refuses them, a ₹0 price and 0,0 at publish time instead. The
+  owner's free text lands in `Property.privateNote`, which no DTO picks. `OwnerSubmission.propertyId
+  @unique` is the duplicate guard, claimed inside the transaction, not checked before it.
 
 ## Commands
 
@@ -52,8 +69,15 @@ npm run icons            # regenerate public/icons/*.png
 
 npm run test:e2e         # Playwright — starts its own dev server on :3187
 npm run test:e2e:ui      # the same suite in Playwright's watch UI
+npm run test:e2e:headed  # headed browsers, same dev server
 npm run test:e2e:prod    # against a production build rather than `next dev`
 npm run test:e2e:report  # open the last HTML report
+npm run test:e2e:deployed # read-only smoke against a deployed server (no database)
+
+# Listings. Note the `--`; without it npm keeps the path for itself. Both print which database
+# they are about to write to, because local and production are one `export DATABASE_URL=` apart.
+npm run listing:create -- prisma/listings/<slug>.json   # lands DRAFT, as the route does
+npm run listing:update -- prisma/listings/<slug>.json   # matches on slug; keeps PUBLISHED
 
 npm run db:migrate       # prisma migrate dev    (all db:* go through scripts/db-env.mjs)
 npm run db:deploy        # prisma migrate deploy — production, never `db push`
@@ -67,6 +91,17 @@ npm run db:setup         # env:pull + migrate deploy + seed, for a fresh environ
 Env lives in `.env.local`, not `.env` — Next reads it, and the `db:*` scripts read it explicitly
 through `scripts/db-env.mjs` because the Prisma CLI does not. See `.env.example`.
 
+**Migrations run inside the Vercel build**, via `buildCommand` in `vercel.json`:
+`npm run db:deploy && npm run build`. That is the only place they *can* run unattended — the
+Neon connection string is non-retrievable (see below), so a deploy is the one context that holds
+a working one. `scripts/db-env.mjs` needs no `.env.local` to do it: the file is optional, real
+environment wins, and `pick()` resolves both the `namma_nivasa_` prefix and the unpooled URL that
+`directUrl` requires. A build that cannot reach the database fails before `next build`, which is
+the intended order — shipping an app against an unmigrated schema is how production came up
+answering 500 to every route once already. Seeding is deliberately *not* in this command:
+`prisma/seed.ts` upserts by slug, so running it on each deploy would quietly rewrite listings a
+curator had edited.
+
 **Neon’s connection string cannot be pulled.** Vercel marks Marketplace-managed variables
 non-retrievable, so `vercel env pull` writes their names with **empty values** — 28 of 37 on
 this project. The string is copied from the dashboard by hand. Do not spend time automating
@@ -77,6 +112,13 @@ exact-name lookup fails on a healthy deployment. Two places resolve the `*_DATAB
 and they must stay in step: `lib/prisma.ts` for the running app (it passes `datasourceUrl`,
 overriding the schema’s `env(DATABASE_URL)`) and `scripts/db-env.mjs` for the Prisma CLI,
 which cannot see application code.
+
+**It is not only `vercel env pull` that overwrites `.env.local`.** `vercel blob create-store`
+does it too, as a side effect of linking the new store — and so do other provisioning
+subcommands. The file it leaves behind holds exactly what the Vercel project holds, which is how
+a local-only `CLERK_SECRET_KEY` gets destroyed by a command that appears to be about file
+storage. Copy `.env.local` somewhere before running any `vercel` command that provisions
+something; `npm run env:pull` is the only path here that preserves local-only keys.
 
 **`vercel env pull .env.local` overwrites that file.** It writes exactly what the Vercel project
 holds, so a local-only `DATABASE_URL` is wiped whenever the project has none. Neon also does not
@@ -131,9 +173,18 @@ never `weekOf(now)` — a booking three weeks out must not be refused because th
 The card badge is the current week by design, so on a Sunday a listing can read "3 slots left"
 while next week is full. Both statements are true; the copy says "this week" for that reason.
 
-A cancelled viewing keeps its row and its slot. Cancelling does not free the time until an admin
-deletes it — an owner who was already told about a visit should not have the same hour resold
-from under them by the next visitor to load the page.
+**A cancelled viewing keeps its hour until it is more than 24 hours away, then the cron gives it
+back.** Cancelling never frees the time immediately: an owner who was already told about a visit
+should not have the same hour resold from under them by the next visitor to load the page. But
+holding it forever quietly starves a listing that only offers three slots a week, so
+`releaseCancelledSlots()` in `lib/reminders.ts` deletes cancelled viewings still more than
+`RELEASE_FLOOR_HOURS` out. Inside that floor the owner may already have arranged their day, and
+the hour stays blocked.
+
+It deletes the `Viewing` and never the `Enquiry` — the lead is history worth keeping, and its
+snapshotted `propertyName` is what makes it readable a year later. The row has to *go* rather
+than change status, because what occupies a slot is the `@@unique([propertyId, scheduledFor])`
+index, not the status field.
 
 ### Time — Asia/Kolkata is a constant, and that is the one shortcut
 
@@ -194,6 +245,34 @@ may have sent this" rather than a message that reached a real person with no rec
 log id is also the AgentMail idempotency key, which is what makes a retried send reach a person
 once.
 
+**An enquiry about a home CCs that home's owner.** `Property.ownerEmail` is nullable and the CC
+is dropped when it is unset, so a listing the curation team sources itself still notifies only
+the team. A `GENERAL` enquiry names no property and therefore copies nobody. `copiesFor()`
+strips the primary recipient and de-duplicates before sending, because `NIVASA_TEAM_EMAIL` and an
+owner's address being the same value is ordinary configuration, not a mistake — and nobody should
+receive one enquiry twice for it.
+
+**Reminders go out the evening before, from a cron.** `vercel.json` schedules
+`/api/cron/viewing-reminders` at `30 12 * * *` — 12:30 UTC is 18:00 IST, when people plan
+tomorrow. The route is the *second* public-and-privileged endpoint after the AgentMail webhook,
+and takes the same posture: authentication is `Authorization: Bearer $CRON_SECRET`, there is no
+session to require so `requireRole()` is not used, and **no secret means 503 rather than running
+for an anonymous caller**. `Viewing.reminderSentAt` is what stops a retried run telling the same
+visitor twice; it is stamped even when delivery failed, because a visible FAILED row in
+`/dashboard/outbox` beats a second copy of "your visit is tomorrow".
+
+The reminder attaches the calendar invite. `lib/ics.ts` is therefore now server-safe: it used to
+emit a *floating* local time built from `getHours()`, which is right only in a Bangalore browser
+and five and a half hours wrong on Vercel. It emits UTC with a `Z` now, so the same event is
+correct in the mail attachment, in the browser download, and for a visitor reading it abroad.
+
+CC rather than BCC on purpose: the team and the owner both need to see who else got it, or they
+answer the same visitor twice. `NotificationLog.cc` records what was actually sent rather than
+recomputing it, because an audit that re-derives its recipients from today's listing answers a
+different question than the one asked. **`ownerEmail` is never rendered to a visitor** — the
+`publicSelect` allowlist in `lib/properties.ts` does not include it, and `PropertyDto` has no
+such field.
+
 ### Email — AgentMail, and what the agent may do alone
 
 `lib/agentmail.ts` is the only file that imports the SDK; everything above it works in terms of
@@ -224,7 +303,8 @@ in ordinary code by `autoSendRefusal()`. Autonomous sending needs *all* of: `NIV
 an intent on a three-entry whitelist, confidence ≥ 80, the model asserting it answered entirely
 from the facts, and the thread's budget of `AUTO_SEND_BUDGET_PER_THREAD` unspent. Anything else
 waits at `/dashboard/inbox`. A model classifying its own message as safe is not a safety control,
-so nothing lets it choose.
+so nothing lets it choose. `docs/agent-autosend.md` carries the whole gate, intent by intent, plus
+the product questions the flag is waiting on — keep it in step with `lib/reply-agent.ts`.
 
 **Rescheduling and cancelling are deliberately off the whitelist.** A moved slot means an owner
 has already been told something that is no longer true, and no email should imply otherwise.
@@ -249,12 +329,105 @@ visitor is looking at it.
 The shortlist and recently-viewed lists are `localStorage`, keyed by **slug, not id** — they have
 to survive a reseed or a restore, neither of which preserves a cuid.
 
+### Deals (Nivasa Close)
+
+A deal room for a direct owner–buyer sale, curator-operated from `/dashboard/deals`. Parties
+have no accounts — the no-visitor-accounts decision holds — and hear from us by email through
+`notify()`. `docs/nivasa-close-handover.md` is the spec and the reasoning behind it.
+
+| File | Owns |
+|---|---|
+| `lib/deal-sheet.ts` | The zod `DealSheet` (the JSON in `Deal.sheet`), `deriveSheet()`, money/date formatting |
+| `lib/deal-playbooks.ts` | The two playbooks as data; milestones anchored to the MOU date or the deadline |
+| `lib/deal-consistency.ts` | `checkDealConsistency()` — pure, the eleven rules, imported directly by its spec |
+| `lib/deal-documents.ts` | `renderDealDocument()` — pure, deterministic MOU / LOU / three bank emails |
+| `lib/deal-extract.ts` | The model call that *proposes* sheet fields from pasted chat text |
+| `lib/deals.ts` | Persistence, status, rendering a version, the party update, the milestone cron |
+| `lib/deal-types.ts` | The contracts between the above, and the dashboard DTOs |
+
+**The model proposes; a curator confirms; code decides.** Extraction returns a proposal that only
+changes the editor form — nothing is saved until a curator presses Save. Clauses come from
+templates, never from a model. Whether a document may be rendered *final* is decided by
+`checkDealConsistency()`: any error and `renderDocument()` refuses with 422.
+
+**Every value a document states comes from the sheet or the ledger, through one helper per
+phrase.** The drafting errors in the handover — a booking amount stated two ways, a deadline from
+the wrong date, two names for one instrument — are made impossible by construction, and the
+checker scans the rendered text anyway. The renderer and the checker agree on phrasing
+("on or before <date>", "booking amount of ₹…", blanks as `______ [hint]`); change one and the
+other's spec will tell you.
+
+**Every document carries a "draft for review" banner, final or not,** until a Bangalore property
+advocate has vetted the templates. Remove it only when that has happened.
+
+**Privacy is stricter here than anywhere else in the app.** No Aadhaar, no full PAN, no full loan
+account number is ever persisted. A full PAN exists only in one render request: the response
+carries the unmasked HTML once, and the stored `DealDocument.html` is the masked render.
+`assertNoFullPan()` refuses, rather than strips, a full PAN arriving in a sheet or a payment.
+Pasted WhatsApp text is used for one model call and never stored or logged.
+
+**Dates are IST calendar dates on the sheet, instants in the columns.** `deadlineAt` and a
+milestone's `dueAt` are the *last* instant of their IST day; `mouSignedAt` is the first; a payment's
+`paidAt` is IST noon, so reading it back through `istDateOf()` can never slip a day.
+
+**The ledger counts a loan once.** A disbursal and its legs (seller-loan payoff, balance to the
+sellers) are one sum recorded from both ends; once a leg is on the ledger the disbursal row stops
+counting toward consideration.
+
+**The milestone cron** is `/api/cron/deal-milestones` at `30 3 * * *` — 09:00 IST, so a curator
+can still chase a bank about something due today. Same posture as `viewing-reminders`:
+`Bearer $CRON_SECRET`, 503 without it. `DealMilestone.lastNotifiedAt` makes it once per milestone
+per IST day, claimed before sending and stamped even when delivery fails.
+
 ## Tests
 
 Playwright only, in `e2e/`. `npm run test:e2e` starts its own `next dev` on **:3187** and drives
 it — no separate step, and never the server on :3000, because a suite that quietly tested
 whatever was already running (against whatever database it was started with) is worse than one
 that refuses to start.
+
+**CI runs it on every push.** `.github/workflows/ci.yml` — lint and typecheck in one job, the
+suite in another against a `postgres:17-alpine` service container it migrates and seeds itself.
+`npm run test:e2e:deployed` is deliberately *not* in it: that one talks to production, and nothing
+on a push trigger should.
+
+What the suite covers, roughly:
+
+| Area | Specs |
+|---|---|
+| Catalogue, filter, FAQ, newsletter, footer | `catalogue.spec.ts` |
+| A listing: copy, gallery, video, brochure | `property-detail.spec.ts` |
+| Both maps, and the coordinates behind them | `map.spec.ts` |
+| Booking: the unique index, the weekly cap, the target week | `booking.spec.ts` |
+| Enquiries, phone normalization, the modal | `enquiry.spec.ts` |
+| Public API shapes, availability, rate limiting | `api-public.spec.ts` |
+| Who a lead is sent to, and the no-provider state | `notifications.spec.ts` |
+| The reminder cron and cancelled-slot release | `reminders.spec.ts` |
+| The calendar invite, on both paths it travels | `calendar-invite.spec.ts` |
+| The inbound webhook's three refusals, idempotency | `inbound-email.spec.ts` |
+| The autonomy gate, condition by condition | `autosend-gate.spec.ts` |
+| The admin boundary with no session | `admin-guard.spec.ts` |
+| The admin API and the editor **with** a session | `admin-api.spec.ts`, `dashboard.spec.ts` |
+| Owner intake, shortlist, PWA, responsive, voice | one spec each |
+
+What it deliberately does not: reach a model, send real mail, or write to production. It also
+never covers the *content* of a model reply — only the gate that decides what may be done with one.
+
+**The signed-in specs are written but gated off** — `E2E_CLERK=1` *and* Clerk keys, or they skip.
+`e2e/support/clerk.ts` signs in for real rather than bypassing auth: a test-only branch in
+`getClerkUserId()` would sit one misconfiguration away from production. It find-or-creates one
+Clerk user per role and the matching `Admin` row — the row is what `requireRole()` reads, so
+creating only the Clerk user gets a correct 403 rather than a session.
+
+They are gated because **the server does not currently accept the session they create**, and the
+reason is not in the tests. The browser ends up with a valid `__session` whose `iss` matches the
+publishable key, whose `azp` is the server under test, which is unexpired, which is sent on the
+request, and which `verifyToken()` accepts using the very `CLERK_SECRET_KEY` the server runs with
+— and `auth()` still reports signed out, in `middleware.ts` and in `/api/admin/bootstrap` alike.
+That pairing is worth resolving (the dev server warns that the `middleware` convention is
+deprecated in favour of `proxy`, and Clerk warns `createRouteMatcher` is going away), and it may
+mean the dashboard is unreachable for a real curator too — worth checking before the next release.
+The header comment in `e2e/support/clerk.ts` lists everything that was ruled out.
 
 **They need a real database, and they write to it.** `app/page.tsx` is a server component that
 loads the whole catalogue before any JavaScript runs, so there is no request a browser could
@@ -297,6 +470,29 @@ Six things are load-bearing and non-obvious:
 
 `e2e/tests/booking.spec.ts` is the one to read first — it is where the double-booking index, the
 weekly cap, and the target-week rule are actually pinned down.
+
+### Testing a deployed server
+
+**The main suite cannot be pointed at a deployment, and `PW_BASE_URL` is not the missing piece.**
+Seven of the eleven specs talk to Postgres directly, so `global-setup.ts` needs `DATABASE_URL` to
+be *the same database the server under test is using*. Neon's string is non-retrievable through
+`vercel env pull`, so that pairing cannot be made from a developer's machine — and if it could,
+the write specs would create real enquiries and spend the real weekly viewing quota on a real
+listing. `webServer.env` is also skipped when `PW_BASE_URL` is set, so `E2E_SERVER_ENV` stops
+applying and `inbound-email.spec.ts` signs against a secret the deployment does not have.
+
+`npm run test:e2e:deployed` is the answer instead: `playwright.deployed.config.ts` +
+`e2e/smoke/*.spec.ts`, **no `globalSetup`, no database connection at all**, and no `webServer` —
+so it cannot write to production and cannot silently fall back to a server it built itself. It
+covers the catalogue against its own API, live availability, the admin boundary, the webhook's
+refusal and the PWA assets. It does *not* cover booking, the double-booking index, the weekly cap
+or the reply agent; those need a database and stay the main suite's job.
+
+One trap it is already built against: **Vercel's deployment-protection wall answers 401 with a
+JSON body**, so a status-code assertion alone passes against a login page that never reached the
+app. The webhook check asserts our own `{success:false,error}` envelope and the HTML check asserts
+the real `<h1>` for that reason. Pointing the suite at a protected preview URL fails all nine
+tests rather than passing a few — which is the behaviour to preserve if you add to it.
 
 ## Conventions
 

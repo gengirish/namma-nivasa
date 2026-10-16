@@ -24,9 +24,38 @@ import { siteUrl, unusableBaseUrl } from "@/lib/site-url";
 export interface NotifyInput {
   type: NotificationType;
   recipient: string;
+  /**
+   * Copied recipients — in practice the owner of the home an enquiry is about.
+   *
+   * Deduplicated and stripped of the primary recipient before sending, because the owner's
+   * address and the team inbox being the same value is an ordinary configuration rather than a
+   * mistake, and nobody should receive one enquiry twice for it.
+   */
+  cc?: string[];
   subject: string;
   body: string;
+  /**
+   * Files to send alongside. Not recorded on the log row: the row exists to answer "what did we
+   * say to whom", and a base64 calendar blob in the audit would bury that under its own weight.
+   */
+  attachments?: { filename: string; contentType: string; content: string }[];
   subjectId?: string | null;
+}
+
+/** Copies worth sending: trimmed, de-duplicated, and never the primary recipient again. */
+function copiesFor(recipient: string, cc: string[] | undefined): string[] {
+  if (!cc?.length) return [];
+  const primary = recipient.trim().toLowerCase();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of cc) {
+    const address = raw.trim();
+    const key = address.toLowerCase();
+    if (!address || key === primary || seen.has(key)) continue;
+    seen.add(key);
+    out.push(address);
+  }
+  return out;
 }
 
 type DeliveryResult =
@@ -42,15 +71,21 @@ type DeliveryResult =
  * out after AgentMail accepted it would be re-sent, and the recipient would get the message
  * twice with no way for us to know we had done it.
  */
-async function deliverEmail(input: NotifyInput, logId: string): Promise<DeliveryResult> {
+async function deliverEmail(
+  input: NotifyInput,
+  logId: string,
+  cc: string[],
+): Promise<DeliveryResult> {
   if (!agentMailConfigured()) {
     return { ok: false, skipped: true, reason: "No email provider is configured" };
   }
 
   const result = await sendEmail({
     to: input.recipient,
+    ...(cc.length ? { cc } : {}),
     subject: input.subject,
     text: input.body,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     idempotencyKey: logId,
   });
 
@@ -65,12 +100,14 @@ async function deliverEmail(input: NotifyInput, logId: string): Promise<Delivery
 
 export async function notify(input: NotifyInput): Promise<void> {
   let logId: string | null = null;
+  const cc = copiesFor(input.recipient, input.cc);
 
   try {
     const created = await prisma.notificationLog.create({
       data: {
         type: input.type,
         recipient: input.recipient,
+        cc,
         subject: input.subject,
         body: input.body,
         subjectId: input.subjectId ?? null,
@@ -86,7 +123,7 @@ export async function notify(input: NotifyInput): Promise<void> {
 
   let update: Prisma.NotificationLogUpdateInput;
   try {
-    const result = await deliverEmail(input, logId);
+    const result = await deliverEmail(input, logId, cc);
     if (result.ok) {
       update = { status: "SENT", sentAt: new Date() };
     } else if (result.skipped) {

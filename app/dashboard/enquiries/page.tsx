@@ -1,3 +1,4 @@
+import { DealOpenButton } from "@/components/dashboard/deal-open-button";
 import { StatusControl } from "@/components/dashboard/status-control";
 import { Empty, PageHeading, Pill, card, formatIst, td, th } from "@/components/dashboard/ui";
 import { hasRole, requireRole } from "@/lib/auth";
@@ -16,7 +17,10 @@ export default async function EnquiriesPage() {
   const enquiries = await prisma.enquiry.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
-    include: { viewing: { select: { scheduledFor: true, status: true } } },
+    include: {
+      viewing: { select: { scheduledFor: true, status: true } },
+      deal: { select: { id: true } },
+    },
   });
 
   return (
@@ -103,6 +107,9 @@ export default async function EnquiriesPage() {
                         options={STATUSES}
                         disabled={!canEdit}
                       />
+                      {canEdit && e.status === "CLOSED" && (
+                        <DealOpenButton enquiryId={e.id} dealId={e.deal?.id ?? null} />
+                      )}
                     </div>
                   </td>
                 </tr>

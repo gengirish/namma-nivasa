@@ -207,8 +207,10 @@ export const propertyCreateSchema = z.object({
   name: z.string().trim().min(2).max(160),
   location: z.string().trim().min(2).max(160),
   locality: z.string().trim().min(2).max(80),
-  tagline: z.string().trim().min(2).max(300),
-  story: z.string().trim().min(2).max(4000),
+  // Tagline, story and hero photo may be blank on a DRAFT — one drafted from owner intake has
+  // none yet. Publishing refuses them blank; see missingForPublish() in lib/admin-properties.ts.
+  tagline: z.string().trim().max(300),
+  story: z.string().trim().max(4000),
   description: z.array(z.string().trim().min(1).max(4000)).max(12).default([]),
   bhk: z.string().trim().min(1).max(20),
   bhkNum: z.coerce.number().int().min(0).max(20),
@@ -221,11 +223,13 @@ export const propertyCreateSchema = z.object({
   longitude: z.coerce.number().min(-180).max(180),
   amenities: z.array(amenitySchema).max(20).default([]),
   hoodBlurb: z.string().trim().max(2000).default(""),
-  heroImageUrl: z.url("The hero image must be a URL"),
+  heroImageUrl: z.union([z.url("The hero image must be a URL"), z.literal("")]),
   videoUrl: z.union([z.url(), z.literal("")]).optional().nullable(),
   floorplanUrl: z.union([z.url(), z.literal("")]).optional().nullable(),
   floorplanNote: optionalText(300),
   weeklyViewingSlots: z.coerce.number().int().min(0).max(50).default(3),
+  /** CC'd on enquiries about this home. Empty string clears it, matching videoUrl/floorplanUrl. */
+  ownerEmail: z.union([emailSchema, z.literal("")]).optional().nullable(),
 });
 
 export const propertyUpdateSchema = propertyCreateSchema.partial().extend({
@@ -300,4 +304,120 @@ export const listQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin: deals (Nivasa Close)
+//
+// The sheet itself is validated by `dealSheetSchema` in lib/deal-sheet.ts, inside lib/deals.ts —
+// a DRAFT deal may hold a partial sheet, so whether "partial" is acceptable depends on the deal's
+// state, which only the lib knows. These schemas only shape the request around it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const dealPlaybookSchema = z.enum(["BUILDER_ASSIGNMENT", "REGISTERED_RESALE"]);
+
+export const dealDocumentKindSchema = z.enum([
+  "MOU",
+  "LOU",
+  "BANK_NOC_LOD_REQUEST",
+  "BANK_FORECLOSURE_REQUEST",
+  "BANK_FOLLOW_UP",
+]);
+
+export const dealPaymentKindSchema = z.enum([
+  "TOKEN",
+  "BOOKING",
+  "SELF_FUNDING",
+  "LOAN_DISBURSAL",
+  "SELLER_LOAN_PAYOFF",
+  "TDS",
+  "BALANCE",
+  "OTHER",
+]);
+
+export const milestoneStatusSchema = z.enum(["PENDING", "IN_PROGRESS", "DONE", "BLOCKED", "SKIPPED"]);
+
+/** A raw sheet object; its fields are checked by lib/deals.ts against `dealSheetSchema`. */
+const rawSheetSchema = z.record(z.string(), z.unknown());
+
+/**
+ * POST /api/admin/deals. Either a fresh deal (`propertyLabel` or `propertyId` names the home) or
+ * one click from a CLOSED enquiry (`enquiryId`, which supplies the label and the buyer).
+ */
+export const dealCreateSchema = z
+  .object({
+    playbook: dealPlaybookSchema,
+    propertyLabel: z.string().trim().min(3).max(200).optional(),
+    /** Paise. Optional at creation: a DRAFT deal may not know its price yet. */
+    considerationPaise: z.coerce.number().int().min(0).max(1_000_000_000_000_000).optional(),
+    propertyId: z.string().trim().min(1).max(60).optional(),
+    enquiryId: z.string().trim().min(1).max(60).optional(),
+    sheet: rawSheetSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.enquiryId && !value.propertyId && !value.propertyLabel) {
+      ctx.addIssue({ code: "custom", message: "Name the property", path: ["propertyLabel"] });
+    }
+  });
+
+export type DealCreateInput = z.infer<typeof dealCreateSchema>;
+
+/** PATCH /api/admin/deals/[id] — exactly one of a sheet edit or a curator closure. */
+export const dealUpdateSchema = z.union([
+  z.object({ sheet: rawSheetSchema }).strict(),
+  z.object({ status: z.enum(["CLOSED", "CANCELLED"]) }).strict(),
+]);
+
+export const dealMilestoneUpdateSchema = z
+  .object({
+    status: milestoneStatusSchema.optional(),
+    /** IST calendar date; the milestone falls due at the end of that day. Null clears it. */
+    dueAt: isoDateSchema.optional().nullable(),
+    /** Empty string or null clears the note; absent leaves it alone. */
+    notes: z.string().trim().max(2000).optional().nullable(),
+  })
+  .refine(
+    (v) => v.status !== undefined || v.dueAt !== undefined || v.notes !== undefined,
+    "Nothing to change",
+  );
+
+export const dealPaymentCreateSchema = z.object({
+  kind: dealPaymentKindSchema,
+  amountPaise: z.coerce.number().int().positive("Add the amount").max(1_000_000_000_000_000),
+  fromLabel: z.string().trim().min(1, "Who paid").max(120),
+  toLabel: z.string().trim().min(1, "Who was paid").max(120),
+  /** IST calendar date `YYYY-MM-DD`; null or absent = planned, not yet paid. */
+  paidAt: isoDateSchema.optional().nullable(),
+  txnRef: optionalText(120),
+});
+
+export const dealPaymentUpdateSchema = z.object({
+  kind: dealPaymentKindSchema.optional(),
+  amountPaise: z.coerce.number().int().positive().max(1_000_000_000_000_000).optional(),
+  fromLabel: z.string().trim().min(1).max(120).optional(),
+  toLabel: z.string().trim().min(1).max(120).optional(),
+  paidAt: isoDateSchema.optional().nullable(),
+  txnRef: z.string().trim().max(120).optional().nullable(),
+});
+
+/** A full PAN: five letters, four digits, a letter. Only ever accepted inside a render request. */
+export const FULL_PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/;
+
+export const dealRenderSchema = z.object({
+  kind: dealDocumentKindSchema,
+  final: z.boolean().default(false),
+  /** Keyed by party name. Rendered into the returned HTML once and never persisted. */
+  fullPans: z.record(z.string(), z.string().regex(FULL_PAN_PATTERN, "That is not a PAN")).optional(),
+});
+
+/** Pasted chat or notes. Used for one extraction call and dropped — never stored or logged. */
+export const DEAL_EXTRACT_MAX_CHARS = 50_000;
+
+export const dealExtractSchema = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(20, "Paste a little more text")
+    .max(DEAL_EXTRACT_MAX_CHARS, "That is too long — paste the part about this deal"),
+  current: rawSheetSchema.optional(),
 });

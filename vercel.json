@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run db:deploy && npm run build",
+  "crons": [
+    {
+      "path": "/api/cron/viewing-reminders",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/deal-milestones",
+      "schedule": "30 3 * * *"
+    }
+  ]
+}

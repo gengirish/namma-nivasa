@@ -1,3 +1,6 @@
+import Link from "next/link";
+
+import { CreateListingButton } from "@/components/dashboard/create-listing-button";
 import { StatusControl } from "@/components/dashboard/status-control";
 import { Empty, PageHeading, Pill, card, formatIst, td, th } from "@/components/dashboard/ui";
 import { hasRole, requireRole } from "@/lib/auth";
@@ -83,6 +86,17 @@ export default async function SubmissionsPage() {
                         options={STATUSES}
                         disabled={!canEdit}
                       />
+                      {sub.propertyId ? (
+                        <Link
+                          href={`/dashboard/properties/${sub.propertyId}`}
+                          style={{ color: "#A16207", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                        >
+                          View listing →
+                        </Link>
+                      ) : (
+                        sub.status === "ACCEPTED" &&
+                        canEdit && <CreateListingButton submissionId={sub.id} />
+                      )}
                     </div>
                   </td>
                 </tr>

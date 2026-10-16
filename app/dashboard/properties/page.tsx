@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { StatusControl } from "@/components/dashboard/status-control";
 import {
   Empty,
@@ -66,7 +68,16 @@ export default async function PropertiesPage() {
                 return (
                   <tr key={p.id}>
                     <td style={td}>
-                      <div>{p.name}</div>
+                      {canEdit ? (
+                        <Link
+                          href={`/dashboard/properties/${p.id}`}
+                          style={{ color: "#A16207", textDecoration: "none" }}
+                        >
+                          {p.name}
+                        </Link>
+                      ) : (
+                        <div>{p.name}</div>
+                      )}
                       <div style={{ fontSize: "0.82rem", color: "#78716C" }}>{p.location}</div>
                       <div style={{ fontSize: "0.78rem", color: "#A8A29E" }}>/{p.slug}</div>
                     </td>

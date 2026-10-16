@@ -185,6 +185,93 @@ export async function fillWeek(
   return placed;
 }
 
+/**
+ * A viewing at an exact instant, with the enquiry that owns it.
+ *
+ * Unlike `bookSlot`, this takes a `Date` rather than a date/time from the picker's grid, because
+ * the reminder specs care about the clock — "more than 24 hours out", "inside tomorrow in
+ * Bangalore" — and not about which hours a visitor may choose. Writing straight to the database
+ * is also what lets a spec arrange a CANCELLED viewing, which no public route can produce.
+ */
+export async function seedViewing(opts: {
+  property: { id: string; name: string };
+  scheduledFor: Date;
+  marker: string;
+  /** Distinguishes several viewings inside one test; references are unique. */
+  suffix: string;
+  email?: string | null;
+  status?: "BOOKED" | "CANCELLED";
+}): Promise<{ reference: string; enquiryId: string; viewingId: string }> {
+  const status = opts.status ?? "BOOKED";
+  const reference = `NIV-${opts.marker.slice(-4).toUpperCase()}${opts.suffix.toUpperCase()}`;
+
+  const enquiry = await db().enquiry.create({
+    data: {
+      reference,
+      kind: "SITE_VISIT",
+      status: status === "CANCELLED" ? "CANCELLED" : "SCHEDULED",
+      propertyId: opts.property.id,
+      propertyName: opts.property.name,
+      name: `${opts.marker} Visitor`,
+      phone: "+919000000002",
+      email: opts.email ?? null,
+      viewing: {
+        create: { propertyId: opts.property.id, scheduledFor: opts.scheduledFor, status },
+      },
+    },
+    select: { id: true, viewing: { select: { id: true } } },
+  });
+
+  return { reference, enquiryId: enquiry.id, viewingId: enquiry.viewing!.id };
+}
+
+/** Whether a viewing row still exists — the question `releaseCancelledSlots()` answers. */
+export async function viewingExists(viewingId: string): Promise<boolean> {
+  return (await db().viewing.count({ where: { id: viewingId } })) > 0;
+}
+
+/**
+ * Gives a seeded listing an owner address for the length of one test, and puts back whatever was
+ * there before.
+ *
+ * Edits a listing that already exists rather than publishing a throwaway one, because the
+ * collection specs assert the page against every PUBLISHED row — a temporary extra home would be
+ * correct in the catalogue and wrong in the count some other spec is holding.
+ */
+export async function setOwnerEmail(
+  slug: string,
+  ownerEmail: string | null,
+): Promise<() => Promise<void>> {
+  const before = await db().property.findUnique({
+    where: { slug },
+    select: { ownerEmail: true },
+  });
+  if (!before) throw new Error(`no property seeded with slug "${slug}" — run npm run db:seed`);
+
+  await db().property.update({ where: { slug }, data: { ownerEmail } });
+
+  return async () => {
+    await db().property.update({ where: { slug }, data: { ownerEmail: before.ownerEmail } });
+  };
+}
+
+/** Every message the app decided to send about one enquiry, oldest first. */
+export async function notificationsFor(enquiryId: string) {
+  return db().notificationLog.findMany({
+    where: { subjectId: enquiryId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      type: true,
+      status: true,
+      recipient: true,
+      cc: true,
+      subject: true,
+      body: true,
+      error: true,
+    },
+  });
+}
+
 /** A listing the public site must never show. Returns a disposer. */
 export async function createUnpublishedProperty(
   marker: string,
@@ -244,6 +331,10 @@ export async function purgeMarker(marker: string): Promise<void> {
   await prisma.emailThread.deleteMany({
     where: { participantEmail: { contains: marker.toLowerCase() } },
   });
+  // Close deals before enquiries: `Deal.enquiryId` is SET NULL, so the order is not required for
+  // integrity, but a deal is the thing a spec looks for by its marked `propertyLabel`. Parties,
+  // milestones, documents and payments all cascade from the deal.
+  await prisma.deal.deleteMany({ where: { propertyLabel: { contains: marker } } });
   await prisma.enquiry.deleteMany({ where: { name: { contains: marker } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: marker } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: marker.toLowerCase() } } });
@@ -257,6 +348,7 @@ export async function purgeAllE2EData(): Promise<void> {
   await prisma.emailThread.deleteMany({
     where: { participantEmail: { contains: E2E_MARKER.toLowerCase() } },
   });
+  await prisma.deal.deleteMany({ where: { propertyLabel: { contains: E2E_MARKER } } });
   await prisma.enquiry.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: E2E_MARKER.toLowerCase() } } });
