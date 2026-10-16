@@ -17,6 +17,7 @@ const NAV = [
   { href: "/dashboard/enquiries", label: "Enquiries" },
   { href: "/dashboard/submissions", label: "Owner intake" },
   { href: "/dashboard/properties", label: "Listings" },
+  { href: "/dashboard/deals", label: "Deals" },
   { href: "/dashboard/inbox", label: "Inbox" },
   { href: "/dashboard/outbox", label: "Outbox" },
 ];

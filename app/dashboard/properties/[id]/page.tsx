@@ -26,6 +26,7 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
     include: {
       images: { orderBy: { sortOrder: "asc" }, select: { url: true, alt: true } },
       hood: { orderBy: { sortOrder: "asc" }, select: { kind: true, name: true, distance: true } },
+      ownerSubmission: { select: { reference: true } },
     },
   });
   if (!property) notFound();
@@ -42,6 +43,42 @@ export default async function EditListingPage({ params }: { params: Promise<{ id
           ← All listings
         </Link>
       </p>
+
+      {property.privateNote && (
+        <div
+          style={{
+            margin: "0 0 24px",
+            padding: "16px 20px",
+            background: "#FEF9EC",
+            border: "1px solid #F1E3BF",
+            borderRadius: 6,
+            maxWidth: 720,
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.72rem",
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#92400E",
+              marginBottom: 8,
+            }}
+          >
+            Private note — never shown on the site
+            {property.ownerSubmission ? (
+              <>
+                {" · "}
+                <Link href="/dashboard/submissions" style={{ color: "#A16207" }}>
+                  {property.ownerSubmission.reference}
+                </Link>
+              </>
+            ) : null}
+          </div>
+          <div style={{ whiteSpace: "pre-wrap", fontSize: "0.88rem", color: "#44403C" }}>
+            {property.privateNote}
+          </div>
+        </div>
+      )}
 
       <ListingForm
         id={property.id}

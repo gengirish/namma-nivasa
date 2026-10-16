@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/viewing-reminders",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/deal-milestones",
+      "schedule": "30 3 * * *"
     }
   ]
 }

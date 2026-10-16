@@ -107,6 +107,9 @@ enum NotificationType {
   OWNER_SUBMISSION_RECEIVED
   NEWSLETTER_WELCOME
   AGENT_REPLY_PENDING // a drafted reply is waiting for a curator
+  DEAL_MILESTONE_DUE // daily digest of Close milestones due or overdue, to the team
+  DEAL_AT_RISK // a deal's deadline is close and milestones are still open
+  DEAL_PARTY_UPDATE // "where your deal stands", curator-triggered, to a party
 }
 
 enum EmailDirection {
@@ -161,6 +164,7 @@ model Admin {
   publishedProperties Property[]   @relation("PropertyPublisher")
   handledEnquiries    Enquiry[]    @relation("EnquiryHandler")
   reviewedDrafts      AgentDraft[] @relation("DraftReviewer")
+  handledDeals        Deal[]       @relation("DealHandler")
 
   @@index([role])
 }
@@ -224,6 +228,10 @@ model Property {
   /// stays server-side unless somebody adds it there on purpose.
   ownerEmail String?
 
+  /// Curator-only context, e.g. what the owner wrote on the intake form. Owners put loan
+  /// details and co-owner names there, so it is never rendered — `lib/dto.ts` does not pick it.
+  privateNote String?
+
   publishedAt DateTime? @db.Timestamptz(3)
   publishedBy String?
   publisher   Admin?    @relation("PropertyPublisher", fields: [publishedBy], references: [id], onDelete: SetNull)
@@ -235,6 +243,10 @@ model Property {
   hood      HoodPlace[]
   enquiries Enquiry[]
   viewings  Viewing[]
+  deals     Deal[]
+
+  /// The intake row this listing was drafted from, if any.
+  ownerSubmission OwnerSubmission?
 
   @@index([status, publishedAt])
   @@index([bhkNum])
@@ -303,6 +315,7 @@ model Enquiry {
 
   viewing      Viewing?
   emailThreads EmailThread[]
+  deal         Deal?
 
   @@index([status, createdAt])
   @@index([propertyId, createdAt])
@@ -368,6 +381,11 @@ model OwnerSubmission {
 
   mediaCount Int     @default(0)
   notes      String?
+
+  /// The draft listing made from this submission. `@unique` is what stops a second click, or a
+  /// second curator, making a second listing — the same reasoning as the double-booking index.
+  propertyId String?   @unique
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -521,4 +539,175 @@ model AgentDraft {
 
   @@index([status, createdAt])
   @@index([threadId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Nivasa Close — the deal room for a direct owner–buyer sale. Curator-operated; parties have
+// no accounts and hear from us by email through notify(). See docs/nivasa-close-handover.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DealPlaybook {
+  BUILDER_ASSIGNMENT // assign a builder Agreement to Sell; builder approval + transfer fee
+  REGISTERED_RESALE // registered sale deed at the sub-registrar
+}
+
+enum DealStatus {
+  DRAFT
+  ACTIVE
+  AT_RISK
+  CLOSED
+  CANCELLED
+}
+
+enum DealPartyRole {
+  SELLER
+  BUYER
+  SELLER_BANK
+  BUYER_BANK
+  BUILDER
+  ASSOCIATION
+  OTHER
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  BLOCKED
+  SKIPPED
+}
+
+enum DealDocumentKind {
+  MOU
+  LOU
+  BANK_NOC_LOD_REQUEST
+  BANK_FORECLOSURE_REQUEST
+  BANK_FOLLOW_UP
+}
+
+enum DealPaymentKind {
+  TOKEN
+  BOOKING
+  SELF_FUNDING
+  LOAN_DISBURSAL
+  SELLER_LOAN_PAYOFF
+  TDS
+  BALANCE
+  OTHER
+}
+
+model Deal {
+  id        String       @id @default(cuid())
+  /// "CLS-7Q4KX2" — same alphabet and reasoning as Enquiry.reference.
+  reference String       @unique
+  playbook  DealPlaybook
+  status    DealStatus   @default(DRAFT)
+
+  /// Null for a deal Nivasa did not list.
+  propertyId    String?
+  property      Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  enquiryId     String?   @unique
+  enquiry       Enquiry?  @relation(fields: [enquiryId], references: [id], onDelete: SetNull)
+  /// Snapshot, e.g. "Sobha Dream Gardens A-1042" — same reasoning as Enquiry.propertyName.
+  propertyLabel String
+
+  considerationPaise BigInt
+  /// The facts every document renders from. Validated by `dealSheetSchema` (lib/deal-sheet.ts).
+  /// JSON rather than columns because each playbook needs different fields; the schema, not the
+  /// column list, is the contract.
+  sheet              Json
+
+  mouSignedAt DateTime? @db.Timestamptz(3)
+  /// mouSignedAt + sheet.deadlineDays, recomputed whenever either changes.
+  deadlineAt  DateTime? @db.Timestamptz(3)
+  closedAt    DateTime? @db.Timestamptz(3)
+
+  handledBy String?
+  handler   Admin?  @relation("DealHandler", fields: [handledBy], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  parties    DealParty[]
+  milestones DealMilestone[]
+  documents  DealDocument[]
+  payments   DealPayment[]
+
+  @@index([status, deadlineAt])
+}
+
+model DealParty {
+  id        String        @id @default(cuid())
+  dealId    String
+  deal      Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  role      DealPartyRole
+  name      String
+  email     String?
+  /// E.164 via lib/validations.ts.
+  phone     String?
+  /// A seller's share in basis points (5000 = 50%). Drives the TDS split.
+  shareBps  Int?
+  /// Never the full PAN — full PANs exist only inside a render request.
+  panLast4  String?
+  sortOrder Int           @default(0)
+
+  @@index([dealId, role])
+}
+
+model DealMilestone {
+  id             String          @id @default(cuid())
+  dealId         String
+  deal           Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// Stable key from the playbook, e.g. "seller_bank_lod".
+  key            String
+  label          String
+  ownerRole      DealPartyRole
+  status         MilestoneStatus @default(PENDING)
+  dueAt          DateTime?       @db.Timestamptz(3)
+  doneAt         DateTime?       @db.Timestamptz(3)
+  notes          String?
+  sortOrder      Int
+  /// When the daily cron last included this milestone in a team digest. What makes the cron
+  /// "once per milestone per IST day" rather than once per run.
+  lastNotifiedAt DateTime?       @db.Timestamptz(3)
+
+  @@unique([dealId, key])
+  @@index([status, dueAt])
+}
+
+model DealDocument {
+  id        String           @id @default(cuid())
+  dealId    String
+  deal      Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind      DealDocumentKind
+  version   Int
+  /// Rendered HTML as generated, with full PANs masked. Kept so a later sheet edit cannot
+  /// rewrite what was already sent or signed.
+  html      String
+  /// Hash of the sheet it was rendered from, to show "sheet changed since this version".
+  sheetHash String
+  /// Rendered past the consistency checker with no errors. A draft may carry errors; a final
+  /// MOU may not.
+  final     Boolean          @default(false)
+  createdBy String?
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([dealId, kind, version])
+}
+
+model DealPayment {
+  id          String          @id @default(cuid())
+  dealId      String
+  deal        Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind        DealPaymentKind
+  amountPaise BigInt
+  fromLabel   String
+  /// e.g. "Seller One", "Seller bank (loan payoff)".
+  toLabel     String
+  /// Null = planned, not yet paid.
+  paidAt      DateTime?       @db.Timestamptz(3)
+  txnRef      String?
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+
+  @@index([dealId, kind])
 }

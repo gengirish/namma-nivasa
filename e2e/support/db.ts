@@ -331,6 +331,10 @@ export async function purgeMarker(marker: string): Promise<void> {
   await prisma.emailThread.deleteMany({
     where: { participantEmail: { contains: marker.toLowerCase() } },
   });
+  // Close deals before enquiries: `Deal.enquiryId` is SET NULL, so the order is not required for
+  // integrity, but a deal is the thing a spec looks for by its marked `propertyLabel`. Parties,
+  // milestones, documents and payments all cascade from the deal.
+  await prisma.deal.deleteMany({ where: { propertyLabel: { contains: marker } } });
   await prisma.enquiry.deleteMany({ where: { name: { contains: marker } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: marker } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: marker.toLowerCase() } } });
@@ -344,6 +348,7 @@ export async function purgeAllE2EData(): Promise<void> {
   await prisma.emailThread.deleteMany({
     where: { participantEmail: { contains: E2E_MARKER.toLowerCase() } },
   });
+  await prisma.deal.deleteMany({ where: { propertyLabel: { contains: E2E_MARKER } } });
   await prisma.enquiry.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.ownerSubmission.deleteMany({ where: { name: { contains: E2E_MARKER } } });
   await prisma.subscriber.deleteMany({ where: { email: { contains: E2E_MARKER.toLowerCase() } } });

@@ -51,6 +51,12 @@ the backend patterns are lifted from the sibling **eventsforge** repo — see "R
 - **The listing editor.** `/dashboard/properties/[id]` is a full form — the only way to change a
   home's copy without a connection string. `/dashboard/properties` still publishes, unpublishes and
   archives; `POST`/`PATCH /api/admin/properties` and the `listing:*` scripts remain the other ways in.
+- **Intake → listing.** An ACCEPTED row on `/dashboard/submissions` gets *Create listing*
+  (`POST /api/admin/submissions/[id]/listing` → `createListingFromSubmission()`). It makes a DRAFT
+  with blank copy, no photo and a 0,0 pin, so `tagline`/`story`/`heroImageUrl` may be empty on a
+  draft — `missingForPublish()` refuses them, a ₹0 price and 0,0 at publish time instead. The
+  owner's free text lands in `Property.privateNote`, which no DTO picks. `OwnerSubmission.propertyId
+  @unique` is the duplicate guard, claimed inside the transaction, not checked before it.
 
 ## Commands
 
@@ -322,6 +328,56 @@ visitor is looking at it.
 
 The shortlist and recently-viewed lists are `localStorage`, keyed by **slug, not id** — they have
 to survive a reseed or a restore, neither of which preserves a cuid.
+
+### Deals (Nivasa Close)
+
+A deal room for a direct owner–buyer sale, curator-operated from `/dashboard/deals`. Parties
+have no accounts — the no-visitor-accounts decision holds — and hear from us by email through
+`notify()`. `docs/nivasa-close-handover.md` is the spec and the reasoning behind it.
+
+| File | Owns |
+|---|---|
+| `lib/deal-sheet.ts` | The zod `DealSheet` (the JSON in `Deal.sheet`), `deriveSheet()`, money/date formatting |
+| `lib/deal-playbooks.ts` | The two playbooks as data; milestones anchored to the MOU date or the deadline |
+| `lib/deal-consistency.ts` | `checkDealConsistency()` — pure, the eleven rules, imported directly by its spec |
+| `lib/deal-documents.ts` | `renderDealDocument()` — pure, deterministic MOU / LOU / three bank emails |
+| `lib/deal-extract.ts` | The model call that *proposes* sheet fields from pasted chat text |
+| `lib/deals.ts` | Persistence, status, rendering a version, the party update, the milestone cron |
+| `lib/deal-types.ts` | The contracts between the above, and the dashboard DTOs |
+
+**The model proposes; a curator confirms; code decides.** Extraction returns a proposal that only
+changes the editor form — nothing is saved until a curator presses Save. Clauses come from
+templates, never from a model. Whether a document may be rendered *final* is decided by
+`checkDealConsistency()`: any error and `renderDocument()` refuses with 422.
+
+**Every value a document states comes from the sheet or the ledger, through one helper per
+phrase.** The drafting errors in the handover — a booking amount stated two ways, a deadline from
+the wrong date, two names for one instrument — are made impossible by construction, and the
+checker scans the rendered text anyway. The renderer and the checker agree on phrasing
+("on or before <date>", "booking amount of ₹…", blanks as `______ [hint]`); change one and the
+other's spec will tell you.
+
+**Every document carries a "draft for review" banner, final or not,** until a Bangalore property
+advocate has vetted the templates. Remove it only when that has happened.
+
+**Privacy is stricter here than anywhere else in the app.** No Aadhaar, no full PAN, no full loan
+account number is ever persisted. A full PAN exists only in one render request: the response
+carries the unmasked HTML once, and the stored `DealDocument.html` is the masked render.
+`assertNoFullPan()` refuses, rather than strips, a full PAN arriving in a sheet or a payment.
+Pasted WhatsApp text is used for one model call and never stored or logged.
+
+**Dates are IST calendar dates on the sheet, instants in the columns.** `deadlineAt` and a
+milestone's `dueAt` are the *last* instant of their IST day; `mouSignedAt` is the first; a payment's
+`paidAt` is IST noon, so reading it back through `istDateOf()` can never slip a day.
+
+**The ledger counts a loan once.** A disbursal and its legs (seller-loan payoff, balance to the
+sellers) are one sum recorded from both ends; once a leg is on the ledger the disbursal row stops
+counting toward consideration.
+
+**The milestone cron** is `/api/cron/deal-milestones` at `30 3 * * *` — 09:00 IST, so a curator
+can still chase a bank about something due today. Same posture as `viewing-reminders`:
+`Bearer $CRON_SECRET`, 503 without it. `DealMilestone.lastNotifiedAt` makes it once per milestone
+per IST day, claimed before sending and stamped even when delivery fails.
 
 ## Tests
 
